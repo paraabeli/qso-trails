@@ -2,6 +2,10 @@
 
 Self-hosted Wavelog/ADIF QSO path globe with an **admin-controlled, privacy-minimized public iframe**.
 
+> **Development disclosure:** QSO Trails was designed and implemented entirely with ChatGPT, with project direction, testing, deployment decisions, and release responsibility by paraabeli.
+>
+> Copyright © 2026 paraabeli. Released under the MIT License.
+
 ## Security-first architecture
 
 The browser never reads your raw log files. Wavelog/ADIF data is stored in a private Docker volume under `/app/data`. When you publish settings, the server creates a sanitized `public-snapshot.json` containing only the selected QSOs and fields you explicitly allow. `/api/public` serves that cached snapshot with ETag/cache headers.
@@ -223,6 +227,16 @@ Review dependency/security PRs before merging.
 
 Country geometry comes from the npm `world-atlas` package (derived from Natural Earth) and is converted server-side with `topojson-client`. Visitors fetch it from `/api/world`; they do not execute CDN-hosted JavaScript.
 
+## Development
+
+QSO Trails was designed and implemented entirely with ChatGPT. The maintainer, paraabeli, provided the project direction, requirements, feature decisions, testing, deployment decisions, security/privacy choices, and release responsibility.
+
+ChatGPT and OpenAI are not listed as copyright holders or project maintainers. The project copyright notice is `Copyright © 2026 paraabeli`.
+
 ## License
 
-Application code is MIT licensed. Third-party packages and map data retain their own licenses.
+QSO Trails application code is licensed under the MIT License. See [`LICENSE`](LICENSE).
+
+Copyright © 2026 paraabeli.
+
+Third-party packages, container images, and map data retain their own licenses. See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for a summary.
