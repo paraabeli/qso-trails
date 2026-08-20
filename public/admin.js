@@ -72,6 +72,30 @@ async function refreshPublicSample() {
   }
 }
 
+function iframeSize() {
+  const presets = {
+    responsive: { width: '100%', height: 620 },
+    compact: { width: 480, height: 420 },
+    qrz: { width: 640, height: 500 },
+    wide: { width: 900, height: 620 }
+  };
+  if ($('iframeSize').value !== 'custom') return presets[$('iframeSize').value] || presets.responsive;
+  return {
+    width: Math.max(320, Math.min(2000, Number($('iframeWidth').value) || 700)),
+    height: Math.max(300, Math.min(1400, Number($('iframeHeight').value) || 550))
+  };
+}
+
+function renderIframe() {
+  const size = iframeSize();
+  const base = stateData?.publicBaseUrl || window.location.origin;
+  $('iframe').textContent = `<iframe src="${base}/embed" width="${size.width}" height="${size.height}" style="border:0" loading="lazy"></iframe>`;
+  $('preview').style.width = typeof size.width === 'number' ? `${size.width}px` : '100%';
+  $('preview').style.maxWidth = '100%';
+  $('preview').style.height = `${size.height}px`;
+  $('iframeCustom').hidden = $('iframeSize').value !== 'custom';
+}
+
 async function loadState() {
   stateData = await readJson(await fetch('/api/admin/state', { cache: 'no-store' }));
   csrfToken = stateData.csrfToken;
@@ -94,10 +118,10 @@ async function loadState() {
   $('wlurl').value = w.baseUrl || '';
   $('wlstations').value = w.stationIds || '';
   $('wlauto').value = w.autoSyncMinutes || 0;
-  $('iframe').textContent = stateData.iframeHtml;
   $('tokenNote').textContent = w.tokenConfigured ? `Token configured (${w.tokenEncrypted ? 'encrypted at rest' : 'not encrypted; configure CONFIG_ENCRYPTION_KEY'}).` : 'No token configured.';
   $('wlstatus').textContent = w.lastSyncAt ? `Last sync ${w.lastSyncAt}; last ID ${w.lastSyncId || 0}${w.lastSyncError ? `; last error: ${w.lastSyncError}` : ''}` : (w.tokenConfigured ? 'Token configured; not synced yet.' : 'Not configured.');
   renderExposure(stateData.publicExposure);
+  renderIframe();
   await refreshPublicSample();
 }
 
@@ -171,5 +195,9 @@ $('publish').addEventListener('click', async () => {
     $('preview').src = `/embed?refresh=${Date.now()}`;
   } catch (error) { $('status').textContent = error.message; }
 });
+
+$('iframeSize').addEventListener('change', renderIframe);
+$('iframeWidth').addEventListener('input', renderIframe);
+$('iframeHeight').addEventListener('input', renderIframe);
 
 loadState().catch(error => { $('status').textContent = error.message; });
