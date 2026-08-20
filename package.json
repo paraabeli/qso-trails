@@ -1,8 +1,8 @@
 {
-  "name": "wavelog-qso-globe",
+  "name": "qso-trails",
   "version": "0.1.0",
   "private": true,
-  "description": "Self-hosted Wavelog/ADIF QSO globe with admin-controlled public iframe view",
+  "description": "Self-hosted Wavelog/ADIF QSO path map with admin-controlled public iframe view",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
