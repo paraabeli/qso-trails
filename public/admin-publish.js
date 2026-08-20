@@ -25,12 +25,20 @@
 
   const checked=id=>$(id)?.checked!==false;
   const setFlag=(url,name,on)=>{if(on)url.searchParams.delete(name);else url.searchParams.set(name,'0');};
-  let rewritingIframe=false,rewritingStatic=false;
+  let rewritingIframe=false,rewritingStatic=false,publicOrigin='';
+
+  function rememberPublicOrigin(){
+    const iframeText=iframePre?.textContent||'',iframeMatch=iframeText.match(/src="([^"]+)"/);
+    if(iframeMatch){try{const url=new URL(iframeMatch[1],location.origin);if(url.origin!==location.origin||!publicOrigin)publicOrigin=url.origin;}catch{}}
+    const snippetText=$('staticSnippet')?.textContent||'',staticMatch=snippetText.match(/https?:\/\/[^\s<]+\/static\/qrz\.png/);
+    if(staticMatch){try{const url=new URL(staticMatch[0]);if(url.origin!==location.origin||!publicOrigin)publicOrigin=url.origin;}catch{}}
+    return publicOrigin||location.origin;
+  }
 
   function applyEmbedControls(){
     if(rewritingIframe||!iframePre)return;
     const text=iframePre.textContent||'',match=text.match(/src="([^"]+)"/);if(!match)return;
-    const url=new URL(match[1],location.origin);
+    const url=new URL(match[1],location.origin);publicOrigin=url.origin;
     setFlag(url,'name',checked('embedShowName'));setFlag(url,'stats',checked('embedShowStats'));setFlag(url,'legend',checked('embedShowLegend'));setFlag(url,'dxcc',checked('embedShowDxcc'));setFlag(url,'details',checked('embedShowDetails'));
     const next=text.replace(match[1],url.toString());
     if(next!==text){rewritingIframe=true;iframePre.textContent=next;rewritingIframe=false;}
@@ -38,7 +46,7 @@
   }
 
   function staticUrl(){
-    const url=new URL('/static/qrz.png',location.origin);
+    const url=new URL('/static/qrz.png',rememberPublicOrigin());
     url.searchParams.set('projection',$('staticProjection')?.value==='mercator'?'mercator':'globe');
     setFlag(url,'name',checked('staticShowName'));setFlag(url,'stats',checked('staticShowStats'));setFlag(url,'legend',checked('staticShowLegend'));setFlag(url,'dxcc',checked('staticShowDxcc'));setFlag(url,'updated',checked('staticShowUpdated'));
     return url;
@@ -47,13 +55,13 @@
   function applyStaticControls(){
     if(rewritingStatic||!staticPreview)return;
     const url=staticUrl(),preview=new URL(url);preview.searchParams.set('preview',String(Date.now()));staticPreview.src=preview.pathname+preview.search;
-    const snippet=$('staticSnippet');if(snippet){const imageUrl=url.toString(),embedUrl=new URL('/embed',location.origin).toString();const next=`Static image URL:\n${imageUrl}\n\nLinked image:\n<a href="${embedUrl}" target="_blank" rel="noopener">\n  <img src="${imageUrl}" width="640" height="500" alt="QSO Trails map">\n</a>`;if(snippet.textContent!==next){rewritingStatic=true;snippet.textContent=next;rewritingStatic=false;}}
+    const snippet=$('staticSnippet');if(snippet){const imageUrl=url.toString(),embedUrl=new URL('/embed',rememberPublicOrigin()).toString();const next=`Static image URL:\n${imageUrl}\n\nLinked image:\n<a href="${embedUrl}" target="_blank" rel="noopener">\n  <img src="${imageUrl}" width="640" height="500" alt="QSO Trails map">\n</a>`;if(snippet.textContent!==next){rewritingStatic=true;snippet.textContent=next;rewritingStatic=false;}}
   }
 
   for(const id of ['embedShowName','embedShowStats','embedShowLegend','embedShowDxcc','embedShowDetails'])$(id)?.addEventListener('change',applyEmbedControls);
   for(const id of ['staticProjection','staticShowName','staticShowStats','staticShowLegend','staticShowDxcc','staticShowUpdated'])$(id)?.addEventListener('change',applyStaticControls);
 
-  if(iframePre)new MutationObserver(()=>queueMicrotask(applyEmbedControls)).observe(iframePre,{childList:true,characterData:true,subtree:true});
-  const staticSnippet=$('staticSnippet');if(staticSnippet)new MutationObserver(()=>queueMicrotask(applyStaticControls)).observe(staticSnippet,{childList:true,characterData:true,subtree:true});
-  setTimeout(()=>{applyEmbedControls();applyStaticControls();},0);
+  if(iframePre)new MutationObserver(()=>queueMicrotask(()=>{rememberPublicOrigin();applyEmbedControls();})).observe(iframePre,{childList:true,characterData:true,subtree:true});
+  const staticSnippet=$('staticSnippet');if(staticSnippet)new MutationObserver(()=>queueMicrotask(()=>{rememberPublicOrigin();applyStaticControls();})).observe(staticSnippet,{childList:true,characterData:true,subtree:true});
+  setTimeout(()=>{rememberPublicOrigin();applyEmbedControls();applyStaticControls();},0);
 })();
