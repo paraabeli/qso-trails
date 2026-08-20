@@ -30,26 +30,20 @@ The public globe never receives the Wavelog token or raw private QSO store.
 - Admin-selected public bands and modes
 - Great-circle paths on an interactive globe
 - World map data bundled through pinned npm dependencies; no third-party runtime JavaScript/CDN
-- Server-side public record limit
-- Public snapshot caching with ETag
+- Server-side public record limit and cached sanitized public snapshot
 - 4-character, 6-character, or exact home/remote coordinate privacy levels
 - Callsign/mode/date/time/grid exposure is opt-in
-- Admin page shows a sample of exactly what `/api/public` exposes
-- Basic Auth plus brute-force throttling, CSRF protection, optional admin IP allowlist
+- Basic Auth, brute-force throttling, CSRF protection and optional admin IP allowlist
 - CSP, HSTS, anti-framing and browser security headers
-- Wavelog URL SSRF/token-leakage protections
-- Wavelog token encrypted at rest in production
-- Non-root/read-only app container with dropped Linux capabilities
-- GitHub Actions dependency audit and Dependabot configuration
+- Wavelog SSRF/token-leakage protections and encrypted token storage
+- Non-root/read-only app container, GitHub Actions security audit and Dependabot
 - Selectable iframe sizes with live admin preview
-- Band legend in the public globe
-- Click QSO points for distance and initial bearing
-- Optional visual date-range filtering
-- Optional live day/night grayline overlay
-- Night, Ocean, and Light globe themes
+- Band legend, clickable QSO detail, distance and bearing
+- Visual date filters and live grayline/day-night overlay
+- Night, Ocean, and Light themes
 - Paths, density heatmap, or combined display modes
 - Adjustable trail opacity
-- Chronological QSO replay with play/pause and timeline controls
+- Advanced chronological replay, live mode, search/focus, presets and WebM export
 
 ## Requirements
 
@@ -88,92 +82,87 @@ Start:
 docker compose up -d --build
 ```
 
-Then open:
-
-- `https://qso.example.com/admin`
-- `https://qso.example.com/embed`
+Then open `https://qso.example.com/admin` and `https://qso.example.com/embed`.
 
 ## Wavelog setup
 
-Create a Wavelog API v2 token with **only**:
+Create a Wavelog API v2 token with only `qso:read`. In `/admin`, enter the Wavelog base URL and token, save, test, then sync. The token is encrypted in the persistent volume using `CONFIG_ENCRYPTION_KEY`.
 
-```text
-qso:read
-```
-
-In `/admin`, enter the Wavelog base URL and token, save, test, then sync. The token is encrypted in the persistent volume using `CONFIG_ENCRYPTION_KEY`.
-
-By default, Wavelog must use HTTPS and resolve to a public address. For an intentional LAN deployment, set `ALLOW_PRIVATE_WAVELOG=true`. For intentional HTTP-only Wavelog, also set `ALLOW_INSECURE_WAVELOG=true` and understand that the Bearer token can then traverse the network without TLS.
+By default Wavelog must use HTTPS and resolve to a public address. For an intentional LAN deployment set `ALLOW_PRIVATE_WAVELOG=true`. For intentional HTTP-only Wavelog also set `ALLOW_INSECURE_WAVELOG=true` and understand the Bearer token can traverse the network without TLS.
 
 ## Public privacy controls
 
-The default is intentionally conservative:
+Defaults are conservative: home and remote positions use 4-character grid centers, band is public for rendering, while callsign, mode, date/time and remote grid are hidden. The Admin page includes **What the Internet sees** and a sample `/api/public` response.
 
-- home position: 4-character grid center
-- remote QSO positions: 4-character grid centers
-- band: exposed because it drives path colors
-- callsign: hidden
-- mode: hidden after server-side filtering
-- QSO date/time: hidden
-- remote grid string: hidden
+`maxPaths` is enforced server-side. If 20,000 QSOs match but `maxPaths=2500`, only 2,500 records are sent to a public browser.
 
-The Admin page includes **What the Internet sees** and a sample `/api/public` response.
+## Advanced replay and live features
 
-`maxPaths` is enforced on the server. If 20,000 QSOs match your filters but `maxPaths=2500`, only 2,500 QSO records are sent to each public browser while the displayed QSO count can still show 20,000.
+Replay remains a presentation layer over the sanitized `/api/public` payload. URL controls never request hidden records or hidden fields.
 
-## Public globe insights and display controls
+Advanced replay supports:
 
-The embed view includes a band-color legend. Clicking a visible QSO point shows its distance and initial bearing from the public home position. Callsign, mode, grid and date are shown only when those fields were already enabled in the privacy controls.
+- loop replay continuously
+- fade older trails during replay
+- follow the newest replayed QSO by rotating the globe
+- uniform replay or relative timing based on published date/time gaps
+- replay a single public band or all bands
+- pulsing current-QSO endpoint
+- current replay HUD using only public date/time/callsign/band/mode fields
+- timeline scrubber and play/pause controls
+- `0.5×`, `1×`, `2×`, and `4×` automatic replay speeds
+- browser-side WebM recording/export using `MediaRecorder`
 
-The iframe generator supports visual date range, grayline, theme, display mode, trail opacity, and replay speed. All of these are presentation-only controls over the already-sanitized public snapshot. They can hide, recolor, aggregate, or animate already-public records, but cannot request hidden records or hidden fields.
+Replay/date features require public QSO dates. Relative timing is most useful when public QSO times are also enabled.
 
-Theme presets:
+### Live mode
 
-- Night
-- Ocean
-- Light
+Live mode polls `/api/public` once per minute with `cache: no-store`. It compares the new sanitized snapshot with the previous one and animates/focuses only newly appearing public records. It never calls Wavelog directly and never gains access to the private raw QSO store.
 
-Display modes:
+### Callsign focus
 
-- Paths
-- Density heatmap
-- Paths + density
+The public viewer can search/focus a callsign only when callsigns were explicitly made public. If callsigns are hidden, the feature cannot reconstruct them.
 
-Date filtering and chronological replay require **Expose QSO dates publicly**. Replay provides play/pause and a timeline slider in the public embed. Supported automatic replay speeds are `0.5×`, `1×`, `2×`, and `4×`.
+### DXCC progress panel
 
-A generated iframe may look like:
+The public viewer contains a DXCC/continent progress panel. It only counts `dxcc`/`cont` metadata if those fields are already present in the sanitized public payload. Otherwise it clearly reports that DXCC metadata is not public rather than inferring hidden station data.
+
+### Saved display presets
+
+The Admin embed generator includes QRZ, 20m DX, FT8 last 30 days and Contest replay presets. A custom **My preset** can also be saved in the administrator's browser via `localStorage`; it does not alter server privacy settings.
+
+## Embed query options
+
+Generated iframe URLs may use:
+
+- `days=1|7|30|365`
+- `grayline=1`
+- `theme=night|ocean|light`
+- `mode=paths|density|both`
+- `opacity=8..90`
+- `replay=0.5|1|2|4`
+- `loop=1`
+- `follow=1`
+- `timing=relative`
+- `fade=0` to disable replay fading
+- `band=<published band>`
+- `live=1`
+
+Example:
 
 ```html
-<iframe src="https://qso.example.com/embed?days=30&grayline=1&theme=ocean&mode=both&opacity=40&replay=1" width="640" height="500" style="border:0" loading="lazy"></iframe>
+<iframe src="https://qso.example.com/embed?days=30&grayline=1&theme=ocean&mode=both&opacity=40&replay=1&loop=1&follow=1&timing=relative" width="640" height="500" style="border:0" loading="lazy"></iframe>
 ```
 
-## QRZ iframe
+## QRZ iframe sizing
 
-The admin page generates an iframe similar to:
+Presets are Responsive `100% × 620`, Compact `480 × 420`, QRZ `640 × 500`, Wide `900 × 620`, and Custom width `320–2000` / height `300–1400`. Sizing only changes generated embed HTML and admin preview.
 
-```html
-<iframe src="https://qso.example.com/embed" width="100%" height="620" style="border:0" loading="lazy"></iframe>
-```
-
-The iframe size selector includes these presets:
-
-- Responsive — `100% × 620`
-- Compact — `480 × 420`
-- QRZ — `640 × 500`
-- Wide — `900 × 620`
-- Custom — width `320–2000`, height `300–1400`
-
-Changing iframe size only changes the generated embed code and admin preview. It does not alter the public QSO payload or privacy settings.
-
-The default CSP permits framing by QSO Trails itself and QRZ domains only. To support another site, edit `EMBED_FRAME_ANCESTORS` in `.env`, for example:
-
-```dotenv
-EMBED_FRAME_ANCESTORS='self' https://qrz.com https://*.qrz.com https://example.org
-```
+The default CSP permits framing by QSO Trails itself and QRZ domains only. To support another site, edit `EMBED_FRAME_ANCESTORS` in `.env`.
 
 ## Restricting admin access
 
-`ADMIN_ALLOWED_IPS` can contain exact addresses or IPv4 CIDRs:
+`ADMIN_ALLOWED_IPS` can contain exact addresses or IPv4 CIDRs, for example:
 
 ```dotenv
 ADMIN_ALLOWED_IPS=100.64.12.34,192.0.2.0/24
@@ -183,20 +172,11 @@ For a personal station server, putting admin access behind Tailscale/VPN and all
 
 ## Data files
 
-The persistent `qso_data` Docker volume contains:
-
-- `qsos.json` — private normalized QSO store
-- `settings.json` — private admin/public configuration
-- `wavelog.json` — Wavelog sync metadata and encrypted token
-- `public-snapshot.json` — sanitized public payload cache
-
-These files are **not** served through `/assets`.
+The persistent `qso_data` volume contains `qsos.json`, `settings.json`, `wavelog.json`, and sanitized `public-snapshot.json`. These files are not served through `/assets`.
 
 ## Dependency/runtime security
 
-Production dependencies are exact-version pinned in `package.json`. Docker installs only those production dependencies with lifecycle scripts disabled. CI generates a lockfile transiently for dependency auditing. The included image uses Node 24 LTS and a pinned Caddy patch release.
-
-GitHub Actions runs syntax checks, `npm audit --omit=dev --audit-level=high`, and validates the Compose file. Dependabot checks npm and Docker updates weekly.
+Production dependencies are exact-version pinned. Docker installs production dependencies with lifecycle scripts disabled. CI runs syntax checks, `npm audit --omit=dev --audit-level=high`, and validates the Compose file. Dependabot checks npm and Docker updates weekly.
 
 ## Updating
 
