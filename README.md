@@ -34,7 +34,8 @@ The public globe and static renderer never receive the Wavelog token or raw priv
 - ADIF upload fallback
 - Admin-selected public bands and modes
 - Great-circle paths on an interactive globe
-- Server-rendered 640 × 500 static PNG for non-JavaScript profile/embed environments
+- Server-rendered 640 × 500 static PNG with 3D-globe or Mercator projection
+- Admin-selectable presentation text for interactive and static published views
 - World map data bundled through pinned npm dependencies; no third-party runtime JavaScript/CDN
 - Server-side public record limit and cached sanitized public snapshot
 - 4-character, 6-character, or exact home/remote coordinate privacy levels
@@ -105,21 +106,34 @@ Defaults are conservative: home and remote positions use 4-character grid center
 
 The **Publish aggregate DXCC statistics** control can disable DXCC statistics entirely. Even when enabled, per-QSO `DXCC`, `COUNTRY`, and `CONT` values are not included in public QSO records.
 
+Presentation switches for the embed and static picture only control what is visibly rendered. They do not grant access to fields that are absent from the sanitized public snapshot, and hiding a presentation element does not change the underlying privacy settings.
+
 ## Static picture publish
 
 `/static/qrz.png` is a server-rendered `640 × 500` PNG built from the same sanitized public snapshot as the interactive globe. It does not fetch Wavelog, does not read the private raw QSO store, and cannot widen the current public band/mode selection or coordinate precision.
 
-The image is regenerated in memory when `public-snapshot.json` changes, so it updates automatically after Wavelog sync, ADIF upload, or public settings changes. The response uses ETag and short public cache headers.
+The Admin page lets you choose either a **3D globe** or **Mercator** projection and independently show or hide the station label, QSO count, band legend, DXCC summary, and generated timestamp. The generated URL includes those presentation choices.
+
+Static image query options are:
+
+- `projection=globe|mercator`
+- `name=0` to hide the station label
+- `stats=0` to hide the QSO count
+- `legend=0` to hide the band legend
+- `dxcc=0` to hide the DXCC summary
+- `updated=0` to hide the generated timestamp
+
+The image is regenerated in memory when `public-snapshot.json` changes, so it updates automatically after Wavelog sync, ADIF upload, or public settings changes. Rendered variants are cached by snapshot state and presentation options, with ETag and short public cache headers.
 
 For a profile or biography page that accepts normal images but does not permit JavaScript frames, use:
 
 ```html
 <a href="https://qso.example.com/embed" target="_blank" rel="noopener">
-  <img src="https://qso.example.com/static/qrz.png" width="640" height="500" alt="QSO Trails map">
+  <img src="https://qso.example.com/static/qrz.png?projection=globe" width="640" height="500" alt="QSO Trails map">
 </a>
 ```
 
-The Admin page shows a live static preview and generates the same copy-ready snippet using your configured public base URL.
+The Admin page shows a live static preview and generates a copy-ready snippet using your configured public base URL.
 
 ## Advanced replay and live features
 
@@ -199,11 +213,18 @@ Generated iframe URLs may use:
 - `fade=0` to disable replay fading
 - `band=<published band>`
 - `live=1`
+- `name=0` to hide the station label
+- `stats=0` to hide the QSO count
+- `legend=0` to hide the band legend
+- `dxcc=0` to hide the DXCC summary/drawer
+- `details=0` to hide click/help text and the interaction hint
+
+The Admin generator exposes the text-visibility choices directly. These flags affect presentation only and cannot reveal a field that was not already published by the server.
 
 Example:
 
 ```html
-<iframe src="https://qso.example.com/embed?days=30&grayline=1&theme=ocean&mode=both&opacity=40&replay=1&loop=1&follow=1&timing=relative" width="640" height="500" style="border:0" loading="lazy"></iframe>
+<iframe src="https://qso.example.com/embed?days=30&grayline=1&theme=ocean&mode=both&opacity=40&replay=1&loop=1&follow=1&timing=relative&details=0" width="640" height="500" style="border:0" loading="lazy"></iframe>
 ```
 
 ## Iframe sizing
@@ -230,11 +251,11 @@ The persistent `qso_data` volume contains `qsos.json`, `settings.json`, `wavelog
 
 ## Dependency/runtime security
 
-Production dependencies are exact-version pinned. Docker installs production dependencies with lifecycle scripts disabled. CI runs JavaScript syntax checks, `npm audit --omit=dev --audit-level=high`, Compose validation, a production Docker image build, and a container smoke test against `/embed`, `/api/public`, and `/static/qrz.png`. The static-image smoke check verifies the PNG signature and a non-trivial image size.
+Production dependencies are exact-version pinned and a reviewed npm v3 `package-lock.json` is committed. CI and the production Docker image install from that lockfile with `npm ci`; lifecycle scripts are disabled.
+
+CI runs JavaScript syntax checks, `npm audit --omit=dev --audit-level=high`, Compose validation, a production Docker image build, and a container smoke test against `/embed`, `/api/public`, and both 3D-globe and Mercator `/static/qrz.png` variants. Static-image smoke checks verify the PNG signature and a non-trivial image size.
 
 GitHub Actions used by CI are pinned to immutable commit SHAs. Dependabot checks npm, Docker, and GitHub Actions updates weekly.
-
-The repository currently generates an npm lockfile transiently in CI rather than committing one. Committing a reviewed lockfile remains an additional reproducibility hardening option for a future release.
 
 ## Updating
 
@@ -243,7 +264,7 @@ git pull
 docker compose up -d --build
 ```
 
-After this DXCC metadata upgrade, run **Full resync** once (or re-upload ADIF) so cached QSO records gain `DXCC`, `COUNTRY`, and `CONT` metadata when available.
+After the earlier DXCC metadata upgrade, run **Full resync** once (or re-upload ADIF) if your cached QSO records still do not contain `DXCC`, `COUNTRY`, and `CONT` metadata when available.
 
 Review dependency/security PRs before merging.
 

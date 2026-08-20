@@ -8,8 +8,8 @@ services:
         FROM node:24.19.0-alpine3.24
         WORKDIR /app
         ENV NODE_ENV=production
-        COPY package.json ./
-        RUN npm install --omit=dev --ignore-scripts --no-audit --no-fund && npm cache clean --force
+        COPY package.json package-lock.json ./
+        RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund && npm cache clean --force
         COPY server.js ./
         COPY static-render.js ./
         COPY static-publish.js ./
