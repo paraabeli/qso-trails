@@ -46,6 +46,10 @@ The public globe never receives the Wavelog token or raw private QSO store.
 - Click QSO points for distance and initial bearing
 - Optional visual date-range filtering
 - Optional live day/night grayline overlay
+- Night, Ocean, and Light globe themes
+- Paths, density heatmap, or combined display modes
+- Adjustable trail opacity
+- Chronological QSO replay with play/pause and timeline controls
 
 ## Requirements
 
@@ -117,24 +121,30 @@ The Admin page includes **What the Internet sees** and a sample `/api/public` re
 
 `maxPaths` is enforced on the server. If 20,000 QSOs match your filters but `maxPaths=2500`, only 2,500 QSO records are sent to each public browser while the displayed QSO count can still show 20,000.
 
-## Public globe insights
+## Public globe insights and display controls
 
 The embed view includes a band-color legend. Clicking a visible QSO point shows its distance and initial bearing from the public home position. Callsign, mode, grid and date are shown only when those fields were already enabled in the privacy controls.
 
-The iframe generator also supports a visual date-range selector and a live day/night grayline overlay. Date filtering is intentionally client-side over the already-sanitized public snapshot: it can only hide records that were already published, never reveal additional records. Because of that, date filtering is available only when **Expose QSO dates publicly** is enabled.
+The iframe generator supports visual date range, grayline, theme, display mode, trail opacity, and replay speed. All of these are presentation-only controls over the already-sanitized public snapshot. They can hide, recolor, aggregate, or animate already-public records, but cannot request hidden records or hidden fields.
 
-Supported visual date presets are:
+Theme presets:
 
-- all published QSOs
-- last 24 hours
-- last 7 days
-- last 30 days
-- last year
+- Night
+- Ocean
+- Light
 
-The generated iframe may look like:
+Display modes:
+
+- Paths
+- Density heatmap
+- Paths + density
+
+Date filtering and chronological replay require **Expose QSO dates publicly**. Replay provides play/pause and a timeline slider in the public embed. Supported automatic replay speeds are `0.5×`, `1×`, `2×`, and `4×`.
+
+A generated iframe may look like:
 
 ```html
-<iframe src="https://qso.example.com/embed?days=30&grayline=1" width="640" height="500" style="border:0" loading="lazy"></iframe>
+<iframe src="https://qso.example.com/embed?days=30&grayline=1&theme=ocean&mode=both&opacity=40&replay=1" width="640" height="500" style="border:0" loading="lazy"></iframe>
 ```
 
 ## QRZ iframe

@@ -1,17 +1,2 @@
 <!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>QSO Trails</title>
-<style>html,body{margin:0;background:#02060c;color:#eef;font:14px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}#wrap{position:relative;overflow:hidden;background:radial-gradient(circle,#17304d,#050a12 65%)}canvas{display:block;width:100%;height:min(620px,75vw);min-height:420px;touch-action:none}.hud{position:absolute;left:12px;top:10px;background:#050b14bb;padding:8px 10px;border-radius:10px;max-width:min(88%,460px)}.hint{position:absolute;left:12px;bottom:10px;font-size:11px;background:#050b14aa;padding:6px;border-radius:8px}.legend{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px;font-size:11px}.legend span{display:inline-flex;align-items:center;gap:4px}.dot{width:8px;height:8px;border-radius:50%;display:inline-block}.details{margin-top:7px;font-size:12px;line-height:1.35;min-height:16px;color:#d9e5f5}</style>
-</head>
-<body>
-<div id="wrap">
-  <canvas id="c" aria-label="Interactive globe showing public QSO paths"></canvas>
-  <div class="hud"><b id="name">QSO Trails</b><div id="stats">Loading…</div><div id="legend" class="legend"></div><div id="details" class="details">Click a QSO point for distance and bearing.</div></div>
-  <div class="hint">Drag to rotate · wheel to zoom · click a QSO point</div>
-</div>
-<script src="/assets/globe.js"></script>
-</body>
-</html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>QSO Trails</title><style>html,body{margin:0;background:#02060c;color:#eef;font:14px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}#wrap{position:relative;overflow:hidden;background:#050a12}canvas{display:block;width:100%;height:min(620px,75vw);min-height:420px;touch-action:none}.hud{position:absolute;left:12px;top:10px;background:#050b14bb;padding:8px 10px;border-radius:10px;max-width:min(88%,460px)}.hint{position:absolute;left:12px;bottom:10px;font-size:11px;background:#050b14aa;padding:6px;border-radius:8px}.legend{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px;font-size:11px}.legend span{display:inline-flex;align-items:center;gap:4px}.dot{width:8px;height:8px;border-radius:50%;display:inline-block}.details{margin-top:7px;font-size:12px;line-height:1.35;min-height:16px;color:#d9e5f5}.replay{position:absolute;right:12px;bottom:10px;background:#050b14cc;padding:8px;border-radius:10px;display:none;gap:7px;align-items:center;max-width:min(72%,520px)}.replay.show{display:flex}.replay button{border:1px solid #43546b;background:#111d2c;color:#eef;border-radius:7px;padding:5px 9px;cursor:pointer}.replay input{width:min(260px,36vw)}.replay small{min-width:38px;text-align:right}</style></head><body><div id="wrap"><canvas id="c" aria-label="Interactive globe showing public QSO paths"></canvas><div class="hud"><b id="name">QSO Trails</b><div id="stats">Loading…</div><div id="legend" class="legend"></div><div id="details" class="details">Click a QSO point for distance and bearing.</div></div><div class="hint">Drag to rotate · wheel to zoom · click a QSO point</div><div id="replay" class="replay"><button id="replayButton" type="button">Replay</button><input id="replayRange" type="range" min="0" max="1000" value="1000"><small id="replayLabel">100%</small></div></div><script src="/assets/globe.js"></script></body></html>
