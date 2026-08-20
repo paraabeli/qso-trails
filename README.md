@@ -1,108 +1,131 @@
-# Wavelog QSO Globe
+# QSO Trails
 
-Self-hosted QSO globe for Wavelog/ADIF logs with an **admin-controlled public iframe**.
+**QSO Trails** is a self-hosted amateur-radio QSO visualization service for Wavelog and ADIF logs. It draws great-circle contact paths on an interactive 3D-style world globe and provides an admin-controlled public iframe suitable for profile pages and station websites.
 
-The public iframe cannot choose arbitrary bands or modes. The server filters the stored QSO data according to the selections saved in `/admin`, then `/api/public` returns only the allowed contacts.
+> Name note: this project intentionally avoids the name **QSO Globe**, which is already used by other amateur-radio software.
 
 ## Features
 
 - Direct **Wavelog API v2** synchronization
-- Incremental sync using Wavelog `since_id`
-- Optional automatic background sync
-- Upload Wavelog `.adi` / `.adif` as a fallback
-- Uses `LAT`/`LON` when available, otherwise `GRIDSQUARE`
-- Great-circle QSO paths
-- 3D-style rotating globe
-- Natural Earth / `world-atlas` country outlines
-- Admin selects one or many public bands
-- Admin selects one or many public modes (CW, SSB, FT8, etc.)
+- Incremental Wavelog sync using `since_id`
+- Optional automatic synchronization
+- Manual `.adi` / `.adif` import
+- Uses QSO `LAT` / `LON` when available, otherwise Maidenhead `GRIDSQUARE`
+- Great-circle paths from your station to worked stations
+- 3D-style rotating globe with Natural Earth / `world-atlas` country outlines
+- Admin-selectable public bands and modes
 - Optional public QSO count
 - Optional callsign exposure
-- Configurable maximum rendered paths
-- Public iframe endpoint: `/embed`
-- Basic-auth protected admin: `/admin`
+- Callsigns removed **server-side** when public exposure is disabled
+- Public iframe endpoint at `/embed`
+- Basic-auth protected admin page at `/admin`
 - JSON persistence; no database required
+- One-file Docker Compose deployment with **Caddy + automatic HTTPS**
 
-## Requirements
+## Wavelog requirements
 
-- Node.js 20+
-- npm
-- Wavelog 3.1.0+ for API v2 synchronization
+Direct API synchronization uses Wavelog API v2 and requires **Wavelog 3.1.0 or later**.
 
-## Install
-
-```bash
-cp .env.example .env
-npm install
-```
-
-Set environment variables before starting. `.env` is only an example file; this app intentionally does not load it automatically.
-
-Linux/macOS example:
-
-```bash
-export ADMIN_USER=admin
-export ADMIN_PASSWORD='use-a-long-random-password'
-export PUBLIC_BASE_URL='https://qso.example.com'
-export PORT=3000
-npm start
-```
-
-PowerShell:
-
-```powershell
-$env:ADMIN_USER="admin"
-$env:ADMIN_PASSWORD="use-a-long-random-password"
-$env:PUBLIC_BASE_URL="https://qso.example.com"
-$env:PORT="3000"
-npm start
-```
-
-Then open:
-
-- Admin: `http://localhost:3000/admin`
-- Public iframe: `http://localhost:3000/embed`
-
-## Wavelog API sync
-
-In Wavelog create an **API v2 token** with the read-only permission:
+Create a Wavelog API v2 token with only:
 
 ```text
 qso:read
 ```
 
-Wavelog API v2 tokens use Bearer authentication and normally start with `wl2_`.
+API v2 tokens begin with `wl2_`. Paste the token and your Wavelog base URL into the QSO Trails admin page.
 
-In `/admin`:
+The token is persisted in the app data volume. Treat the server and its backups as sensitive.
 
-1. Enter the base URL of your Wavelog instance, e.g. `https://log.example.com`.
-2. Enter the API v2 token.
-3. Optionally enter one or more station IDs, comma-separated. Leave blank for all stations available to that token.
-4. Click **Test connection**.
-5. Click **Sync new QSOs** for incremental synchronization.
-6. Use **Full resync** if you want to rebuild the local QSO store from Wavelog.
-7. Optionally enable scheduled synchronization.
+## Fastest production deployment
 
-The first incremental sync behaves as a full sync. Later syncs remember the highest Wavelog QSO ID and request only newer contacts using `since_id`.
+Requirements:
 
-The API credential is stored locally in `data/wavelog.json`; this file is ignored by Git and should not be made public.
+- A Linux host with Docker Engine and Docker Compose v2.17+
+- A DNS name pointing to the host
+- TCP ports **80** and **443** reachable from the Internet
+- UDP port **443** optional but recommended for HTTP/3
+
+Clone the repository and create `.env`:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env`:
+
+```dotenv
+DOMAIN=qso.example.com
+ADMIN_USER=admin
+ADMIN_PASSWORD=replace-with-a-long-random-password
+```
+
+Start everything:
+
+```bash
+docker compose up -d --build
+```
+
+That single `compose.yaml`:
+
+1. Builds QSO Trails using an inline Dockerfile.
+2. Starts the Node application on the internal Docker network.
+3. Starts Caddy.
+4. Publishes ports 80/443.
+5. Obtains and renews a public TLS certificate automatically.
+6. Reverse-proxies `https://$DOMAIN` to the app.
+7. Persists QSO settings/data and Caddy certificates in named Docker volumes.
+
+Open:
+
+```text
+https://qso.example.com/admin
+https://qso.example.com/embed
+```
+
+Useful commands:
+
+```bash
+docker compose ps
+docker compose logs -f
+docker compose pull
+docker compose up -d --build
+docker compose down
+```
+
+Do **not** use `docker compose down -v` unless you intend to delete the QSO cache/settings and Caddy certificate state.
+
+## DNS / firewall checklist
+
+Before starting Caddy for a public domain:
+
+- Create an `A` record for `DOMAIN` pointing to the server's public IPv4 address.
+- Add an `AAAA` record only if the server really has working public IPv6.
+- Forward/open TCP 80 and 443 to the Docker host.
+- Optionally open UDP 443 for HTTP/3.
+- Make sure another web server is not already bound to ports 80/443.
+
+Caddy obtains HTTPS automatically when the configured hostname resolves to the server.
 
 ## Admin workflow
 
-1. Sign in at `/admin`.
-2. Synchronize Wavelog or upload an ADIF export.
-3. Set your Maidenhead locator.
-4. Check the bands that are allowed publicly.
-5. Check the modes that are allowed publicly.
-6. Choose public display options.
-7. Click **Publish selected view**.
-8. Copy the generated iframe HTML.
+1. Open `/admin`.
+2. Enter the Wavelog base URL.
+3. Enter a Wavelog API v2 token with `qso:read`.
+4. Optionally specify station IDs.
+5. Test the connection.
+6. Run **Sync new** or **Full resync**.
+7. Enter your station/callsign label and home Maidenhead locator.
+8. Select the bands allowed in the public view.
+9. Select the modes allowed in the public view.
+10. Choose whether callsigns and the QSO count may be public.
+11. Publish the selected view.
+12. Copy the iframe HTML.
 
-If no bands or no modes are selected, the public iframe intentionally displays zero QSOs.
+The public client cannot override the admin's band/mode selections: `/api/public` is filtered on the server.
 
 ## QRZ-style iframe
 
-After setting `PUBLIC_BASE_URL`, the admin page generates code similar to:
+The admin page generates markup similar to:
 
 ```html
 <iframe
@@ -114,46 +137,50 @@ After setting `PUBLIC_BASE_URL`, the admin page generates code similar to:
 </iframe>
 ```
 
-Whether a third-party site accepts the iframe is controlled by that site's HTML/security policy.
+Whether an external site accepts an iframe is ultimately controlled by that site's HTML and Content Security Policy.
 
-## Data privacy
+## Manual development
 
-The `/api/public` endpoint is filtered on the server. Contacts outside the admin-selected band/mode set are not returned to the browser.
-
-When **Show callsigns** is disabled, callsigns are stripped on the server before the public response is sent.
-
-The public payload still contains the coordinates, band/mode, date/time, and grid information required by the visualization. For a privacy-focused deployment, publish only the contacts you are comfortable making public.
-
-## Docker
+Requires Node.js 20+.
 
 ```bash
-export ADMIN_PASSWORD='use-a-long-random-password'
-export PUBLIC_BASE_URL='https://qso.example.com'
-docker compose up -d --build
+npm install
+ADMIN_PASSWORD='dev-password' PUBLIC_BASE_URL='http://localhost:3000' npm start
 ```
 
-The `data/` directory is mounted into the container and persists settings, QSO data, sync state, and the Wavelog API configuration.
-
-## Deployment
-
-A simple setup is:
+Then open:
 
 ```text
-Internet
-   |
- HTTPS reverse proxy (Caddy / nginx / Traefik)
-   |
- Node app :3000
+http://localhost:3000/admin
+http://localhost:3000/embed
 ```
 
-Use HTTPS and change the default admin password before exposing `/admin` publicly.
+## Runtime data
 
-The app is intended as a small self-hosted station service. It does not currently implement multi-user accounts or CSRF tokens. Put it behind HTTPS and consider additional reverse-proxy rate limiting if it is exposed broadly.
+Runtime files are stored in `/app/data` inside the app container and persisted in the `qso_data` Docker volume.
+
+The app may create files including:
+
+```text
+qsos.json
+settings.json
+wavelog.json
+```
+
+`wavelog.json` contains the Wavelog API token and must not be committed to Git.
+
+## Security notes
+
+- Change the default/admin password before making the service public.
+- Keep the Wavelog API token limited to `qso:read`.
+- Use HTTPS for the public deployment.
+- Back up the `qso_data` volume if the locally cached settings matter to you.
+- The current application is intended for a small self-hosted station deployment; it does not yet provide multi-user accounts, CSRF tokens, or an external secret-management backend.
 
 ## World map source
 
-The globe uses the `world-atlas` package, derived from Natural Earth data, loaded via jsDelivr and converted with `topojson-client`.
+The globe uses `world-atlas`, derived from Natural Earth data, loaded in the public browser and converted using `topojson-client`.
 
 ## License
 
-Application code in this repository is provided under the MIT License. Third-party map data/libraries retain their own licenses.
+Application code is provided under the MIT License. Third-party libraries and map data retain their own licenses.
