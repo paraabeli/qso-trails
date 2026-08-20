@@ -2,6 +2,7 @@
   "name": "qso-trails",
   "version": "0.2.0",
   "private": true,
+  "license": "MIT",
   "description": "Self-hosted Wavelog/ADIF QSO path map with admin-controlled public iframe view",
   "main": "server.js",
   "scripts": {
