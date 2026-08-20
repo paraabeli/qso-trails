@@ -11,6 +11,7 @@ const { renderStaticPng } = require('./static-render');
 const snapshotFile = path.join(__dirname, 'data', 'public-snapshot.json');
 const world = topojson.feature(worldAtlas, worldAtlas.objects.countries);
 const cache = new Map();
+const STATIC_THEMES = new Set(['retro', 'clean', 'futuristic', 'rough']);
 
 function boolOption(value, fallback = true) {
   if (value == null || value === '') return fallback;
@@ -18,8 +19,10 @@ function boolOption(value, fallback = true) {
 }
 
 function imageOptions(query) {
+  const requestedTheme = String(query.theme || '').toLowerCase();
   return {
     projection: query.projection === 'mercator' ? 'mercator' : 'globe',
+    theme: STATIC_THEMES.has(requestedTheme) ? requestedTheme : 'retro',
     showName: boolOption(query.name),
     showStats: boolOption(query.stats),
     showLegend: boolOption(query.legend),
@@ -29,7 +32,7 @@ function imageOptions(query) {
 }
 
 function optionsKey(options) {
-  return [options.projection, options.showName, options.showStats, options.showLegend, options.showDxcc, options.showUpdated].join(':');
+  return [options.projection, options.theme, options.showName, options.showStats, options.showLegend, options.showDxcc, options.showUpdated].join(':');
 }
 
 async function staticImage(options) {
