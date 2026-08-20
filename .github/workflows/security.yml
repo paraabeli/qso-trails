@@ -21,16 +21,22 @@ jobs:
       - run: npm run check
       - run: npm run audit:prod
       - name: Validate Compose
-        env: &compose-env
+        env:
           DOMAIN: qso.example.com
           ADMIN_PASSWORD: ci-only-long-random-password
           CONFIG_ENCRYPTION_KEY: ci-only-encryption-key-at-least-32-characters-long
         run: docker compose config --quiet
       - name: Build production app image
-        env: *compose-env
+        env:
+          DOMAIN: qso.example.com
+          ADMIN_PASSWORD: ci-only-long-random-password
+          CONFIG_ENCRYPTION_KEY: ci-only-encryption-key-at-least-32-characters-long
         run: docker compose build app
       - name: Start production app for smoke test
-        env: *compose-env
+        env:
+          DOMAIN: qso.example.com
+          ADMIN_PASSWORD: ci-only-long-random-password
+          CONFIG_ENCRYPTION_KEY: ci-only-encryption-key-at-least-32-characters-long
         run: docker compose run -d --name qso-trails-ci -p 3000:3000 app
       - name: Smoke test production endpoints
         run: |
