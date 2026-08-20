@@ -41,6 +41,7 @@ The public globe never receives the Wavelog token or raw private QSO store.
 - Wavelog token encrypted at rest in production
 - Non-root/read-only app container with dropped Linux capabilities
 - GitHub Actions dependency audit and Dependabot configuration
+- Selectable iframe sizes with live admin preview
 
 ## Requirements
 
@@ -119,6 +120,16 @@ The admin page generates an iframe similar to:
 ```html
 <iframe src="https://qso.example.com/embed" width="100%" height="620" style="border:0" loading="lazy"></iframe>
 ```
+
+The iframe size selector includes these presets:
+
+- Responsive — `100% × 620`
+- Compact — `480 × 420`
+- QRZ — `640 × 500`
+- Wide — `900 × 620`
+- Custom — width `320–2000`, height `300–1400`
+
+Changing iframe size only changes the generated embed code and admin preview. It does not alter the public QSO payload or privacy settings.
 
 The default CSP permits framing by QSO Trails itself and QRZ domains only. To support another site, edit `EMBED_FRAME_ANCESTORS` in `.env`, for example:
 
