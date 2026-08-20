@@ -41,6 +41,7 @@ const defaults = {
   showDates: false,
   showTimes: false,
   showRemoteGrid: false,
+  showDxccStats: true,
   homePrecision: 'grid4',
   remotePrecision: 'grid4',
   maxPaths: 2500
@@ -307,6 +308,9 @@ function normalizeQso(record, source = 'wavelog') {
     date,
     time: timeFromDate.replace(/:/g, '') || record.TIME_ON || '',
     grid: record.gridsquare || record.GRIDSQUARE || '',
+    dxcc: String(record.dxcc || record.DXCC || '').trim(),
+    country: String(record.country || record.COUNTRY || '').trim().slice(0, 120),
+    cont: String(record.cont || record.CONT || '').trim().toUpperCase().slice(0, 2),
     lat: position.lat,
     lon: position.lon
   };
@@ -346,6 +350,7 @@ function sanitizeSettings(input, meta) {
     showDates: Boolean(input.showDates),
     showTimes: Boolean(input.showTimes),
     showRemoteGrid: Boolean(input.showRemoteGrid),
+    showDxccStats: input.showDxccStats !== false,
     homePrecision: precisionValues.has(input.homePrecision) ? input.homePrecision : 'grid4',
     remotePrecision: precisionValues.has(input.remotePrecision) ? input.remotePrecision : 'grid4',
     maxPaths: Math.max(100, Math.min(10_000, Number(input.maxPaths) || 2500))
@@ -380,6 +385,86 @@ function qsoSortKey(q) {
   return `${String(q.date || '').padStart(8, '0')}${String(q.time || '').padStart(6, '0')}${String(q.sourceId || 0).padStart(12, '0')}`;
 }
 
+function qsoTimestamp(q) {
+  const d = String(q.date || '').replace(/\D/g, '').slice(0, 8);
+  const t = String(q.time || '').replace(/\D/g, '').padEnd(6, '0').slice(0, 6);
+  if (!/^\d{8}$/.test(d)) return 0;
+  return Date.UTC(Number(d.slice(0, 4)), Number(d.slice(4, 6)) - 1, Number(d.slice(6, 8)), Number(t.slice(0, 2)), Number(t.slice(2, 4)), Number(t.slice(4, 6)));
+}
+
+function distanceKm(a, b) {
+  const toRad = value => value * Math.PI / 180;
+  const p1 = toRad(a.lat), p2 = toRad(b.lat), dp = toRad(b.lat - a.lat), dl = toRad(b.lon - a.lon);
+  const h = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+function publicDxccStats(qsos, settings) {
+  if (!settings.showDxccStats) return null;
+  const withMeta = qsos.filter(q => q.dxcc || q.country || q.cont);
+  const entities = new Set(withMeta.map(q => String(q.dxcc || '')).filter(Boolean));
+  const countries = new Set(withMeta.map(q => String(q.country || '')).filter(Boolean));
+  const continents = new Set(withMeta.map(q => String(q.cont || '')).filter(Boolean));
+  const countMap = (key, filter = () => true) => {
+    const map = new Map();
+    for (const q of withMeta) {
+      if (!filter(q)) continue;
+      const value = String(q[key] || '').trim();
+      if (value) map.set(value, (map.get(value) || 0) + 1);
+    }
+    return [...map.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([name, qsos]) => ({ name, qsos }));
+  };
+  const entityMap = new Map();
+  const bandMap = new Map();
+  const modeMap = new Map();
+  const firstWorked = new Map();
+  const home = publicHome(settings);
+  let farthest = null;
+  for (const q of withMeta) {
+    const id = String(q.dxcc || '').trim();
+    if (id) {
+      const current = entityMap.get(id) || { dxcc: id, country: String(q.country || '').trim(), qsos: 0 };
+      current.qsos++;
+      if (!current.country && q.country) current.country = String(q.country).trim();
+      entityMap.set(id, current);
+      if (q.band) {
+        const b = bandMap.get(q.band) || { qsos: 0, entities: new Set() };
+        b.qsos++; b.entities.add(id); bandMap.set(q.band, b);
+      }
+      if (settings.showMode && q.mode) {
+        const m = modeMap.get(q.mode) || { qsos: 0, entities: new Set() };
+        m.qsos++; m.entities.add(id); modeMap.set(q.mode, m);
+      }
+      const ts = qsoTimestamp(q);
+      if (settings.showDates && ts) {
+        const previous = firstWorked.get(id);
+        if (!previous || ts < previous.ts) firstWorked.set(id, { ts, dxcc: id, country: String(q.country || '').trim() });
+      }
+      if (home) {
+        const p = positionAtPrecision(q.lat, q.lon, q.grid, settings.remotePrecision);
+        const km = distanceKm(home, p);
+        if (!farthest || km > farthest.distanceKm) farthest = { dxcc: id, country: String(q.country || '').trim(), distanceKm: Math.round(km) };
+      }
+    }
+  }
+  const topDxcc = [...entityMap.values()].sort((a, b) => b.qsos - a.qsos || a.dxcc.localeCompare(b.dxcc, undefined, { numeric: true })).slice(0, 10);
+  const byBand = [...bandMap.entries()].map(([band, value]) => ({ band, qsos: value.qsos, entities: value.entities.size })).sort((a, b) => b.entities - a.entities || b.qsos - a.qsos || a.band.localeCompare(b.band, undefined, { numeric: true }));
+  const byMode = settings.showMode ? [...modeMap.entries()].map(([mode, value]) => ({ mode, qsos: value.qsos, entities: value.entities.size })).sort((a, b) => b.entities - a.entities || b.qsos - a.qsos || a.mode.localeCompare(b.mode)) : null;
+  const newestFirstWorked = settings.showDates ? [...firstWorked.values()].sort((a, b) => b.ts - a.ts)[0] || null : null;
+  return {
+    metadataAvailable: withMeta.length > 0,
+    entities: entities.size,
+    countries: countries.size,
+    continents: continents.size,
+    byContinent: countMap('cont'),
+    topDxcc,
+    byBand,
+    byMode,
+    farthest,
+    newestFirstWorked: newestFirstWorked ? { dxcc: newestFirstWorked.dxcc, country: newestFirstWorked.country, date: new Date(newestFirstWorked.ts).toISOString().slice(0, 10) } : null
+  };
+}
+
 function sanitizePublicQso(q, settings) {
   const p = positionAtPrecision(q.lat, q.lon, q.grid, settings.remotePrecision);
   const out = { band: q.band, lat: p.lat, lon: p.lon };
@@ -401,7 +486,8 @@ function publicExposureSummary(settings, qsoCount, returnedQsos) {
       mode: settings.showMode,
       date: settings.showDates,
       time: settings.showTimes,
-      remoteGrid: settings.showRemoteGrid
+      remoteGrid: settings.showRemoteGrid,
+      dxccAggregates: settings.showDxccStats
     },
     homePrecision: settings.homePrecision,
     remotePrecision: settings.remotePrecision
@@ -413,7 +499,7 @@ async function rebuildPublicSnapshot() {
   const allowed = filterAllowedQsos(qsos, settings).sort((a, b) => qsoSortKey(b).localeCompare(qsoSortKey(a)));
   const limited = allowed.slice(0, settings.maxPaths);
   const payload = {
-    version: 2,
+    version: 3,
     settings: {
       stationName: settings.stationName,
       home: publicHome(settings),
@@ -423,6 +509,7 @@ async function rebuildPublicSnapshot() {
     },
     qsoCount: allowed.length,
     returnedQsos: limited.length,
+    stats: { dxcc: publicDxccStats(allowed, settings) },
     qsos: limited.map(q => sanitizePublicQso(q, settings))
   };
   await writeJson(PUBLIC_SNAPSHOT_FILE, payload);
@@ -666,6 +753,7 @@ app.get('/api/admin/state', async (req, res) => {
     },
     csrfToken,
     publicExposure: publicCache.summary,
+    publicBaseUrl: BASE,
     iframeHtml: `<iframe src="${BASE}/embed" width="100%" height="620" style="border:0" loading="lazy"></iframe>`
   });
 });
