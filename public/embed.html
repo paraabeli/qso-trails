@@ -4,13 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>QSO Trails</title>
-<style>html,body{margin:0;background:#02060c;color:#eef;font:14px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}#wrap{position:relative;overflow:hidden;background:radial-gradient(circle,#17304d,#050a12 65%)}canvas{display:block;width:100%;height:min(620px,75vw);min-height:420px;touch-action:none}.hud{position:absolute;left:12px;top:10px;background:#050b14bb;padding:8px 10px;border-radius:10px}.hint{position:absolute;left:12px;bottom:10px;font-size:11px;background:#050b14aa;padding:6px;border-radius:8px}</style>
+<style>html,body{margin:0;background:#02060c;color:#eef;font:14px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}#wrap{position:relative;overflow:hidden;background:radial-gradient(circle,#17304d,#050a12 65%)}canvas{display:block;width:100%;height:min(620px,75vw);min-height:420px;touch-action:none}.hud{position:absolute;left:12px;top:10px;background:#050b14bb;padding:8px 10px;border-radius:10px;max-width:min(88%,460px)}.hint{position:absolute;left:12px;bottom:10px;font-size:11px;background:#050b14aa;padding:6px;border-radius:8px}.legend{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px;font-size:11px}.legend span{display:inline-flex;align-items:center;gap:4px}.dot{width:8px;height:8px;border-radius:50%;display:inline-block}.details{margin-top:7px;font-size:12px;line-height:1.35;min-height:16px;color:#d9e5f5}</style>
 </head>
 <body>
 <div id="wrap">
   <canvas id="c" aria-label="Interactive globe showing public QSO paths"></canvas>
-  <div class="hud"><b id="name">QSO Trails</b><div id="stats">Loading…</div></div>
-  <div class="hint">Drag to rotate · wheel to zoom</div>
+  <div class="hud"><b id="name">QSO Trails</b><div id="stats">Loading…</div><div id="legend" class="legend"></div><div id="details" class="details">Click a QSO point for distance and bearing.</div></div>
+  <div class="hint">Drag to rotate · wheel to zoom · click a QSO point</div>
 </div>
 <script src="/assets/globe.js"></script>
 </body>
