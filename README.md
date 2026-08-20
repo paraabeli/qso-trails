@@ -12,7 +12,7 @@ Wavelog / ADIF
       v
 private /app/data/qsos.json
       |
-server-side band/mode filtering + privacy rounding
+server-side band/mode filtering + privacy rounding + aggregate statistics
       |
       v
 private /app/data/public-snapshot.json
@@ -33,6 +33,7 @@ The public globe never receives the Wavelog token or raw private QSO store.
 - Server-side public record limit and cached sanitized public snapshot
 - 4-character, 6-character, or exact home/remote coordinate privacy levels
 - Callsign/mode/date/time/grid exposure is opt-in
+- Privacy-safe aggregate DXCC/country/continent statistics
 - Basic Auth, brute-force throttling, CSRF protection and optional admin IP allowlist
 - CSP, HSTS, anti-framing and browser security headers
 - Wavelog SSRF/token-leakage protections and encrypted token storage
@@ -43,7 +44,7 @@ The public globe never receives the Wavelog token or raw private QSO store.
 - Night, Ocean, and Light themes
 - Paths, density heatmap, or combined display modes
 - Adjustable trail opacity
-- Advanced chronological replay, live mode, search/focus, presets and WebM export
+- Advanced chronological replay, live mode, search/focus, presets and explicit WebM save/download flow
 
 ## Requirements
 
@@ -94,7 +95,9 @@ By default Wavelog must use HTTPS and resolve to a public address. For an intent
 
 Defaults are conservative: home and remote positions use 4-character grid centers, band is public for rendering, while callsign, mode, date/time and remote grid are hidden. The Admin page includes **What the Internet sees** and a sample `/api/public` response.
 
-`maxPaths` is enforced server-side. If 20,000 QSOs match but `maxPaths=2500`, only 2,500 records are sent to a public browser.
+`maxPaths` is enforced server-side. If 20,000 QSOs match but `maxPaths=2500`, only 2,500 QSO records are sent to a public browser. Aggregate DXCC statistics are calculated **before** that truncation, so the statistics represent the complete server-selected public set rather than only the rendered subset.
+
+The **Publish aggregate DXCC statistics** control can disable DXCC statistics entirely. Even when enabled, per-QSO `DXCC`, `COUNTRY`, and `CONT` values are not included in public QSO records.
 
 ## Advanced replay and live features
 
@@ -111,9 +114,18 @@ Advanced replay supports:
 - current replay HUD using only public date/time/callsign/band/mode fields
 - timeline scrubber and play/pause controls
 - `0.5×`, `1×`, `2×`, and `4×` automatic replay speeds
-- browser-side WebM recording/export using `MediaRecorder`
+- browser-side WebM recording using `MediaRecorder`
 
 Replay/date features require public QSO dates. Relative timing is most useful when public QSO times are also enabled.
+
+### WebM export
+
+The public embed uses an explicit two-step export flow:
+
+1. Click **Export WebM** to start recording and replay from the beginning.
+2. When replay completes (or after **Stop recording**), click **Download WebM**.
+
+The second user click is intentional because browsers and iframe hosts can block automatic synthetic downloads. Where supported, QSO Trails uses the browser save-file picker. Otherwise it starts a normal user-initiated WebM download. If a third-party iframe host blocks downloads entirely, open the `/embed` URL directly in a browser tab and click **Download WebM** there.
 
 ### Live mode
 
@@ -125,7 +137,25 @@ The public viewer can search/focus a callsign only when callsigns were explicitl
 
 ### DXCC progress panel
 
-The public viewer contains a DXCC/continent progress panel. It only counts `dxcc`/`cont` metadata if those fields are already present in the sanitized public payload. Otherwise it clearly reports that DXCC metadata is not public rather than inferring hidden station data.
+During normalization, QSO Trails stores ADIF/Wavelog `DXCC`, `COUNTRY`, and `CONT` metadata privately when the source provides it. The public snapshot then publishes only server-calculated aggregate statistics when **Publish aggregate DXCC statistics** is enabled.
+
+The public DXCC drawer includes:
+
+- unique DXCC entities
+- named countries
+- continents
+- QSO count by continent
+- top 10 DXCC entities by QSO count
+- DXCC entity/QSO counts by band
+- DXCC entity/QSO counts by mode when mode exposure is enabled
+- most distant DXCC, calculated using the configured public coordinate precision
+- newest first-worked DXCC when date exposure is enabled
+
+The aggregates are calculated from all server-selected QSOs before `maxPaths` truncation. Per-QSO DXCC/country/continent metadata remains private.
+
+After upgrading from a version that did not store DXCC metadata, run **Full resync** once in the Wavelog section, or re-upload the ADIF file. Existing cached QSO records cannot gain DXCC metadata until they are normalized again.
+
+QSO Trails does not currently claim `worked / total DXCC` percentage because that requires a maintained authoritative current/deleted DXCC entity reference list.
 
 ### Saved display presets
 
@@ -184,6 +214,8 @@ Production dependencies are exact-version pinned. Docker installs production dep
 git pull
 docker compose up -d --build
 ```
+
+After this DXCC metadata upgrade, run **Full resync** once (or re-upload ADIF) so cached QSO records gain `DXCC`, `COUNTRY`, and `CONT` metadata when available.
 
 Review dependency/security PRs before merging.
 
