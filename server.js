@@ -1,35 +1,758 @@
-const express=require("express"),multer=require("multer"),fs=require("fs/promises"),path=require("path"),crypto=require("crypto");
-const app=express(),PORT=+process.env.PORT||3000,BASE=(process.env.PUBLIC_BASE_URL||`http://localhost:${PORT}`).replace(/\/$/,""),USER=process.env.ADMIN_USER||"admin",PASS=process.env.ADMIN_PASSWORD||"change-me-now";
-const DATA=path.join(__dirname,"data"),PUB=path.join(__dirname,"public"),QF=path.join(DATA,"qsos.json"),SF=path.join(DATA,"settings.json"),WF=path.join(DATA,"wavelog.json");
-const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:25*1024*1024}});
-const defaults={stationName:"My Station",homeGrid:"KP20",bands:[],modes:[],autoRotate:true,showStats:true,showCallsigns:false,maxPaths:2500};
-const wdefaults={baseUrl:"",token:"",stationIds:"",autoSyncMinutes:0,lastSyncId:0,lastSyncAt:null,lastSyncError:null};
-let syncing=false;
-async function read(f,d){try{return JSON.parse(await fs.readFile(f,"utf8"))}catch{return structuredClone(d)}}
-async function write(f,v){await fs.mkdir(DATA,{recursive:true});let t=f+"."+crypto.randomUUID();await fs.writeFile(t,JSON.stringify(v,null,2),{mode:0o600});await fs.rename(t,f)}
-function eq(a,b){a=Buffer.from(String(a));b=Buffer.from(String(b));return a.length===b.length&&crypto.timingSafeEqual(a,b)}
-function auth(req,res,next){let h=req.headers.authorization||"";if(!h.startsWith("Basic "))return res.set("WWW-Authenticate",'Basic realm="QSO Trails Admin"').status(401).end();let [u,p=""]=Buffer.from(h.slice(6),"base64").toString().split(":");if(!eq(u,USER)||!eq(p,PASS))return res.set("WWW-Authenticate",'Basic realm="QSO Trails Admin"').status(401).end();next()}
-function grid(g){g=String(g||"").trim().toUpperCase();if(!/^[A-R]{2}\d{2}([A-X]{2})?(\d{2})?$/.test(g))return null;let lon=(g.charCodeAt(0)-65)*20-180+ +g[2]*2,lat=(g.charCodeAt(1)-65)*10-90+ +g[3],xs=2,ys=1;if(g.length>=6){xs=2/24;ys=1/24;lon+=(g.charCodeAt(4)-65)*xs;lat+=(g.charCodeAt(5)-65)*ys}if(g.length>=8){xs/=10;ys/=10;lon+=+g[6]*xs;lat+=+g[7]*ys}return{lat:lat+ys/2,lon:lon+xs/2}}
-function coord(v,lat){if(v==null||v==="")return null;let n=+v;if(Number.isFinite(n)&&Math.abs(n)<=(lat?90:180))return n;let m=String(v).trim().toUpperCase().match(/^([NSEW])?\s*(\d{1,3})[:\s](\d{1,2}(?:\.\d+)?)\s*([NSEW])?$/);if(!m)return null;n=+m[2]+ +m[3]/60;if((m[1]||m[4])==="S"||(m[1]||m[4])==="W")n=-n;return Math.abs(n)<=(lat?90:180)?n:null}
-function pos(r){let lat=coord(r.LAT??r.lat,true),lon=coord(r.LON??r.lon,false);return lat!=null&&lon!=null?{lat,lon}:grid(r.GRIDSQUARE??r.gridsquare)}
-function adif(t){let out=[],tag=/<([A-Z0-9_]+):(\d+)(?::[^>]*)?>([^<]*)/ig;for(let c of String(t).split(/<EOR>/i)){let r={},m;tag.lastIndex=0;while(m=tag.exec(c))r[m[1].toUpperCase()]=m[3].slice(0,+m[2]).trim();if(Object.keys(r).length)out.push(r)}return out}
-function norm(r,src="wavelog"){let p=pos(r);if(!p)return null;let d=String(r.qso_date||r.QSO_DATE||""),[date,time=""]=d.split(/\s+/,2);return{source:src,sourceId:+r.id||0,call:r.call||r.CALL||"?",band:String(r.band||r.BAND||"").toUpperCase(),mode:String(r.submode||r.SUBMODE||r.mode||r.MODE||"").toUpperCase(),date,time:time.replace(/:/g,"")||r.TIME_ON||"",grid:r.gridsquare||r.GRIDSQUARE||"",lat:p.lat,lon:p.lon}}
-const uniq=a=>[...new Set(a.filter(Boolean))].sort((x,y)=>x.localeCompare(y,undefined,{numeric:true}));
-async function state(){let qsos=await read(QF,[]),settings={...defaults,...await read(SF,defaults)};return{qsos,settings,meta:{total:qsos.length,bands:uniq(qsos.map(q=>q.band)),modes:uniq(qsos.map(q=>q.mode))}}}
-function cleanSettings(x,m){let home=String(x.homeGrid||"").toUpperCase();if(!grid(home))throw Error("Invalid Maidenhead locator");let bs=new Set(m.bands),ms=new Set(m.modes);return{stationName:String(x.stationName||"My Station").slice(0,80),homeGrid:home,bands:(x.bands||[]).map(String).map(v=>v.toUpperCase()).filter(v=>bs.has(v)),modes:(x.modes||[]).map(String).map(v=>v.toUpperCase()).filter(v=>ms.has(v)),autoRotate:!!x.autoRotate,showStats:!!x.showStats,showCallsigns:!!x.showCallsigns,maxPaths:Math.max(100,Math.min(10000,+x.maxPaths||2500))}}
-function pub(q,s){let allow=new Set(s.bands),modes=new Set(s.modes);return q.filter(x=>allow.has(x.band)&&modes.has(x.mode)).map(x=>{let o={band:x.band,mode:x.mode,date:x.date,time:x.time,grid:x.grid,lat:x.lat,lon:x.lon};if(s.showCallsigns)o.call=x.call;return o})}
-function wlurl(base){base=String(base||"").trim().replace(/\/+$/,"");if(!/^https?:\/\//.test(base))throw Error("Wavelog URL must be http(s)");return /\/index\.php$/i.test(base)?base+"/api/v2/qso":base+"/index.php/api/v2/qso"}
-async function wcfg(){return{...wdefaults,...await read(WF,wdefaults)}}
-async function reqjson(u,c){let ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),30000);try{let r=await fetch(u,{headers:{Authorization:`Bearer ${c.token}`,Accept:"application/json"},signal:ctl.signal}),t=await r.text(),j=t?JSON.parse(t):{};if(!r.ok)throw Error(j?.error?.message||j?.message||r.statusText);return j}finally{clearTimeout(tm)}}
-async function sync(full=false){if(syncing)throw Error("Sync already running");syncing=true;try{let c=await wcfg();if(!c.baseUrl||!c.token)throw Error("Configure Wavelog URL and token");let since=full?0:+c.lastSyncId||0,page=1,rows=[],max=since;for(;;page++){let u=new URL(wlurl(c.baseUrl));u.searchParams.set("page",page);u.searchParams.set("per_page","5000");if(since)u.searchParams.set("since_id",since);if(c.stationIds)u.searchParams.set("station_id",c.stationIds);let j=await reqjson(u,c),d=Array.isArray(j.data)?j.data:[];rows.push(...d);for(let r of d)max=Math.max(max,+r.id||0);if(!j.meta?.has_more)break}let n=rows.map(r=>norm(r)).filter(Boolean),old=full?[]:await read(QF,[]),map=new Map(old.map(q=>[(q.sourceId?`w:${q.sourceId}`:crypto.createHash("sha1").update(JSON.stringify(q)).digest("hex")),q]));for(let q of n)map.set(`w:${q.sourceId}`,q);let all=[...map.values()];await write(QF,all);c={...c,lastSyncId:max,lastSyncAt:new Date().toISOString(),lastSyncError:null};await write(WF,c);return{fetched:rows.length,usable:n.length,stored:all.length,lastSyncId:max}}catch(e){let c=await wcfg();await write(WF,{...c,lastSyncError:String(e.message||e)});throw e}finally{syncing=false}}
-async function autosync(){let c=await wcfg(),min=+c.autoSyncMinutes||0;if(!min||!c.baseUrl||!c.token||syncing)return;let last=c.lastSyncAt?Date.parse(c.lastSyncAt):0;if(Date.now()-last<min*60000)return;try{await sync(false)}catch(e){console.error(e.message)}}
-app.disable("x-powered-by");app.use(express.json({limit:"1mb"}));app.use("/assets",express.static(PUB,{index:false}));
-app.get("/",(_,r)=>r.redirect("/embed"));app.get("/embed",(_,r)=>r.sendFile(path.join(PUB,"embed.html")));app.get("/admin",auth,(_,r)=>r.sendFile(path.join(PUB,"admin.html")));
-app.get("/api/public",async(_,r)=>{let{qsos,settings}=await state(),p=pub(qsos,settings);r.json({settings:{stationName:settings.stationName,homeGrid:settings.homeGrid,autoRotate:settings.autoRotate,showStats:settings.showStats,maxPaths:settings.maxPaths},qsoCount:p.length,qsos:p})});
-app.get("/api/admin/state",auth,async(_,r)=>{let s=await state(),w=await wcfg();r.json({meta:s.meta,settings:s.settings,wavelog:{...w,token:undefined,tokenConfigured:!!w.token,syncing},iframeHtml:`<iframe src="${BASE}/embed" width="100%" height="620" style="border:0" loading="lazy"></iframe>`})});
-app.post("/api/admin/settings",auth,async(q,r)=>{try{let s=await state(),v=cleanSettings(q.body,s.meta);await write(SF,v);r.json({ok:true,visibleQsos:pub(s.qsos,v).length})}catch(e){r.status(400).json({error:e.message})}});
-app.post("/api/admin/upload",auth,upload.single("adif"),async(q,r)=>{if(!q.file)return r.status(400).json({error:"Choose ADIF"});let rows=adif(q.file.buffer.toString()).map(x=>norm(x,"adif")).filter(Boolean);await write(QF,rows);r.json({usableQsos:rows.length})});
-app.post("/api/admin/wavelog/config",auth,async(q,r)=>{try{let c=await wcfg(),b=String(q.body.baseUrl||"").replace(/\/+$/,"");let token=String(q.body.token||"").trim()||c.token,stationIds=String(q.body.stationIds||"").trim(),autoSyncMinutes=Math.max(0,+q.body.autoSyncMinutes||0);if(b)wlurl(b);await write(WF,{...c,baseUrl:b,token,stationIds,autoSyncMinutes});r.json({ok:true})}catch(e){r.status(400).json({error:e.message})}});
-app.post("/api/admin/wavelog/test",auth,async(_,r)=>{try{let c=await wcfg(),u=new URL(wlurl(c.baseUrl));u.searchParams.set("per_page","1");await reqjson(u,c);r.json({ok:true})}catch(e){r.status(400).json({error:e.message})}});
-app.post("/api/admin/wavelog/sync",auth,async(q,r)=>{try{r.json({ok:true,...await sync(!!q.body?.full)})}catch(e){r.status(400).json({error:e.message})}});
-fs.mkdir(DATA,{recursive:true}).then(()=>app.listen(PORT,"0.0.0.0",()=>console.log(`QSO Trails ${BASE}`)));setInterval(autosync,60000).unref();
+'use strict';
+
+const express = require('express');
+const multer = require('multer');
+const fs = require('fs/promises');
+const path = require('path');
+const crypto = require('crypto');
+const dns = require('dns/promises');
+const net = require('net');
+const topojson = require('topojson-client');
+const worldAtlas = require('world-atlas/countries-50m.json');
+
+const app = express();
+const PORT = Number(process.env.PORT || 3000);
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const BASE = (process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
+const ADMIN_USER = process.env.ADMIN_USER || 'admin';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'change-me-now';
+const CONFIG_ENCRYPTION_KEY = process.env.CONFIG_ENCRYPTION_KEY || '';
+const ALLOW_INSECURE_WAVELOG = process.env.ALLOW_INSECURE_WAVELOG === 'true';
+const ALLOW_PRIVATE_WAVELOG = process.env.ALLOW_PRIVATE_WAVELOG === 'true';
+const ADMIN_ALLOWED_IPS = String(process.env.ADMIN_ALLOWED_IPS || '').split(',').map(v => v.trim()).filter(Boolean);
+const EMBED_FRAME_ANCESTORS = String(process.env.EMBED_FRAME_ANCESTORS || "'self' https://qrz.com https://*.qrz.com").trim();
+
+const DATA = path.join(__dirname, 'data');
+const PUBLIC = path.join(__dirname, 'public');
+const QSO_FILE = path.join(DATA, 'qsos.json');
+const SETTINGS_FILE = path.join(DATA, 'settings.json');
+const WAVELOG_FILE = path.join(DATA, 'wavelog.json');
+const PUBLIC_SNAPSHOT_FILE = path.join(DATA, 'public-snapshot.json');
+
+const defaults = {
+  stationName: 'My Station',
+  homeGrid: 'KP20',
+  bands: [],
+  modes: [],
+  autoRotate: true,
+  showStats: true,
+  showCallsigns: false,
+  showMode: false,
+  showDates: false,
+  showTimes: false,
+  showRemoteGrid: false,
+  homePrecision: 'grid4',
+  remotePrecision: 'grid4',
+  maxPaths: 2500
+};
+
+const wavelogDefaults = {
+  baseUrl: '',
+  stationIds: '',
+  autoSyncMinutes: 0,
+  lastSyncId: 0,
+  lastSyncAt: null,
+  lastSyncError: null
+};
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 25 * 1024 * 1024,
+    files: 1,
+    fields: 2,
+    parts: 3,
+    fieldNameSize: 100,
+    fieldSize: 2048
+  }
+});
+
+let syncing = false;
+let publicCache = null;
+
+function failFastOnUnsafeProductionConfig() {
+  if (NODE_ENV !== 'production') return;
+  if (!ADMIN_PASSWORD || ADMIN_PASSWORD === 'change-me-now' || ADMIN_PASSWORD.length < 16) {
+    throw new Error('ADMIN_PASSWORD must be a unique password of at least 16 characters in production.');
+  }
+  if (CONFIG_ENCRYPTION_KEY.length < 32) {
+    throw new Error('CONFIG_ENCRYPTION_KEY must contain at least 32 characters in production.');
+  }
+}
+
+async function readJson(file, fallback) {
+  try {
+    return JSON.parse(await fs.readFile(file, 'utf8'));
+  } catch (error) {
+    if (error && error.code !== 'ENOENT' && error.name !== 'SyntaxError') throw error;
+    return structuredClone(fallback);
+  }
+}
+
+async function writeJson(file, value) {
+  await fs.mkdir(DATA, { recursive: true, mode: 0o700 });
+  const tmp = `${file}.${crypto.randomUUID()}.tmp`;
+  await fs.writeFile(tmp, JSON.stringify(value, null, 2), { mode: 0o600 });
+  await fs.rename(tmp, file);
+}
+
+function fixedHash(value) {
+  return crypto.createHash('sha256').update(String(value)).digest();
+}
+
+function safeEqual(a, b) {
+  return crypto.timingSafeEqual(fixedHash(a), fixedHash(b));
+}
+
+function requestIp(req) {
+  return String(req.ip || req.socket.remoteAddress || '').replace(/^::ffff:/, '');
+}
+
+function ipv4ToInt(ip) {
+  const parts = ip.split('.').map(Number);
+  if (parts.length !== 4 || parts.some(n => !Number.isInteger(n) || n < 0 || n > 255)) return null;
+  return (((parts[0] << 24) >>> 0) + (parts[1] << 16) + (parts[2] << 8) + parts[3]) >>> 0;
+}
+
+function ipMatchesRule(ip, rule) {
+  ip = ip.replace(/^::ffff:/, '');
+  if (!rule.includes('/')) return ip === rule;
+  const [network, bitsText] = rule.split('/');
+  const bits = Number(bitsText);
+  if (net.isIP(ip) !== 4 || net.isIP(network) !== 4 || !Number.isInteger(bits) || bits < 0 || bits > 32) return false;
+  const a = ipv4ToInt(ip), b = ipv4ToInt(network);
+  const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
+  return (a & mask) === (b & mask);
+}
+
+function adminNetworkAllowed(req) {
+  if (!ADMIN_ALLOWED_IPS.length) return true;
+  const ip = requestIp(req);
+  return ADMIN_ALLOWED_IPS.some(rule => ipMatchesRule(ip, rule));
+}
+
+const authFailures = new Map();
+function authFailureState(ip) {
+  const now = Date.now();
+  const current = authFailures.get(ip);
+  if (!current || now - current.startedAt > 15 * 60_000) {
+    const fresh = { startedAt: now, count: 0 };
+    authFailures.set(ip, fresh);
+    return fresh;
+  }
+  return current;
+}
+
+function adminAuth(req, res, next) {
+  if (!adminNetworkAllowed(req)) return res.status(403).send('Admin access is not allowed from this address.');
+  const ip = requestIp(req);
+  const failures = authFailureState(ip);
+  if (failures.count >= 10) {
+    res.set('Retry-After', String(Math.ceil((failures.startedAt + 15 * 60_000 - Date.now()) / 1000)));
+    return res.status(429).send('Too many failed admin authentication attempts.');
+  }
+
+  const header = req.headers.authorization || '';
+  if (!header.startsWith('Basic ')) {
+    res.set('WWW-Authenticate', 'Basic realm="QSO Trails Admin"');
+    return res.status(401).send('Authentication required.');
+  }
+
+  let decoded = '';
+  try {
+    decoded = Buffer.from(header.slice(6), 'base64').toString('utf8');
+  } catch {
+    failures.count++;
+    return res.status(401).send('Invalid authorization header.');
+  }
+  const colon = decoded.indexOf(':');
+  const user = colon >= 0 ? decoded.slice(0, colon) : decoded;
+  const password = colon >= 0 ? decoded.slice(colon + 1) : '';
+  if (!safeEqual(user, ADMIN_USER) || !safeEqual(password, ADMIN_PASSWORD)) {
+    failures.count++;
+    authFailures.set(ip, failures);
+    res.set('WWW-Authenticate', 'Basic realm="QSO Trails Admin"');
+    return res.status(401).send('Invalid credentials.');
+  }
+  authFailures.delete(ip);
+  next();
+}
+
+const csrfToken = crypto.createHmac('sha256', ADMIN_PASSWORD).update(`qso-trails:${ADMIN_USER}:csrf`).digest('base64url');
+function requireCsrf(req, res, next) {
+  const fetchSite = String(req.get('sec-fetch-site') || '');
+  if (fetchSite && !['same-origin', 'same-site', 'none'].includes(fetchSite)) return res.status(403).json({ error: 'Cross-site admin request blocked.' });
+  if (!safeEqual(req.get('x-csrf-token') || '', csrfToken)) return res.status(403).json({ error: 'Invalid CSRF token.' });
+  next();
+}
+
+function makeRateLimiter({ windowMs, max, label }) {
+  const buckets = new Map();
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, value] of buckets) if (now - value.startedAt > windowMs * 2) buckets.delete(key);
+  }, Math.max(60_000, windowMs)).unref();
+
+  return (req, res, next) => {
+    const key = `${label}:${requestIp(req)}`;
+    const now = Date.now();
+    let bucket = buckets.get(key);
+    if (!bucket || now - bucket.startedAt >= windowMs) bucket = { startedAt: now, count: 0 };
+    bucket.count++;
+    buckets.set(key, bucket);
+    const remaining = Math.max(0, max - bucket.count);
+    res.set('RateLimit-Limit', String(max));
+    res.set('RateLimit-Remaining', String(remaining));
+    res.set('RateLimit-Reset', String(Math.ceil((bucket.startedAt + windowMs) / 1000)));
+    if (bucket.count > max) {
+      res.set('Retry-After', String(Math.ceil((bucket.startedAt + windowMs - now) / 1000)));
+      return res.status(429).json({ error: 'Too many requests.' });
+    }
+    next();
+  };
+}
+
+const publicApiRateLimit = makeRateLimiter({ windowMs: 60_000, max: 180, label: 'public' });
+const adminApiRateLimit = makeRateLimiter({ windowMs: 60_000, max: 120, label: 'admin' });
+
+function commonSecurityHeaders(req, res, next) {
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('Referrer-Policy', 'no-referrer');
+  res.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+  res.set('X-DNS-Prefetch-Control', 'off');
+  res.set('Cross-Origin-Resource-Policy', 'same-origin');
+  if (req.secure || String(req.get('x-forwarded-proto')).toLowerCase() === 'https') {
+    res.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+}
+
+function adminDocumentHeaders(req, res, next) {
+  res.set('Cache-Control', 'no-store');
+  res.set('X-Frame-Options', 'DENY');
+  res.set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'; form-action 'self'");
+  next();
+}
+
+function embedDocumentHeaders(req, res, next) {
+  res.set('Cache-Control', 'public, max-age=300');
+  res.set('Content-Security-Policy', `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors ${EMBED_FRAME_ANCESTORS}; object-src 'none'; base-uri 'none'; form-action 'none'`);
+  next();
+}
+
+function maidenheadToLatLon(gridValue) {
+  const g = String(gridValue || '').trim().toUpperCase();
+  if (!/^[A-R]{2}[0-9]{2}([A-X]{2})?([0-9]{2})?$/.test(g)) return null;
+  let lon = (g.charCodeAt(0) - 65) * 20 - 180 + Number(g[2]) * 2;
+  let lat = (g.charCodeAt(1) - 65) * 10 - 90 + Number(g[3]);
+  let lonSize = 2, latSize = 1;
+  if (g.length >= 6) {
+    lonSize = 2 / 24; latSize = 1 / 24;
+    lon += (g.charCodeAt(4) - 65) * lonSize;
+    lat += (g.charCodeAt(5) - 65) * latSize;
+  }
+  if (g.length >= 8) {
+    lonSize /= 10; latSize /= 10;
+    lon += Number(g[6]) * lonSize;
+    lat += Number(g[7]) * latSize;
+  }
+  return { lat: lat + latSize / 2, lon: lon + lonSize / 2 };
+}
+
+function parseCoord(value, isLat) {
+  if (value == null || value === '') return null;
+  const text = String(value).trim().toUpperCase();
+  const direct = Number(text);
+  if (Number.isFinite(direct) && Math.abs(direct) <= (isLat ? 90 : 180)) return direct;
+  const match = text.match(/^([NSEW])?\s*(\d{1,3})[:\s](\d{1,2}(?:\.\d+)?)\s*([NSEW])?$/);
+  if (!match) return null;
+  let result = Number(match[2]) + Number(match[3]) / 60;
+  const hemi = match[1] || match[4];
+  if (hemi === 'S' || hemi === 'W') result = -result;
+  return Math.abs(result) <= (isLat ? 90 : 180) ? result : null;
+}
+
+function qsoPosition(record) {
+  const lat = parseCoord(record.LAT ?? record.lat, true);
+  const lon = parseCoord(record.LON ?? record.lon, false);
+  if (lat !== null && lon !== null) return { lat, lon };
+  return maidenheadToLatLon(record.GRIDSQUARE ?? record.gridsquare);
+}
+
+function parseAdif(text) {
+  const records = [];
+  const tag = /<([A-Z0-9_]+):(\d+)(?::[^>]*)?>([^<]*)/ig;
+  for (const chunk of String(text).split(/<EOR>/i)) {
+    const record = {};
+    let match;
+    tag.lastIndex = 0;
+    while ((match = tag.exec(chunk)) !== null) record[match[1].toUpperCase()] = match[3].slice(0, Number(match[2])).trim();
+    if (Object.keys(record).length) records.push(record);
+    if (records.length > 500_000) throw new Error('ADIF contains too many records.');
+  }
+  return records;
+}
+
+function normalizeQso(record, source = 'wavelog') {
+  const position = qsoPosition(record);
+  if (!position) return null;
+  const dateTime = String(record.qso_date || record.QSO_DATE || '');
+  const [date, timeFromDate = ''] = dateTime.split(/\s+/, 2);
+  return {
+    source,
+    sourceId: Number(record.id) || 0,
+    call: record.call || record.CALL || '?',
+    band: String(record.band || record.BAND || '').toUpperCase(),
+    mode: String(record.submode || record.SUBMODE || record.mode || record.MODE || '').toUpperCase(),
+    date,
+    time: timeFromDate.replace(/:/g, '') || record.TIME_ON || '',
+    grid: record.gridsquare || record.GRIDSQUARE || '',
+    lat: position.lat,
+    lon: position.lon
+  };
+}
+
+const uniqueSorted = values => [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+async function getState() {
+  const qsos = await readJson(QSO_FILE, []);
+  const settings = { ...defaults, ...await readJson(SETTINGS_FILE, defaults) };
+  return {
+    qsos,
+    settings,
+    meta: {
+      total: qsos.length,
+      bands: uniqueSorted(qsos.map(q => q.band)),
+      modes: uniqueSorted(qsos.map(q => q.mode))
+    }
+  };
+}
+
+function sanitizeSettings(input, meta) {
+  const homeGrid = String(input.homeGrid || '').trim().toUpperCase();
+  if (!maidenheadToLatLon(homeGrid)) throw new Error('Invalid Maidenhead locator.');
+  const allowedBands = new Set(meta.bands);
+  const allowedModes = new Set(meta.modes);
+  const precisionValues = new Set(['grid4', 'grid6', 'exact']);
+  return {
+    stationName: String(input.stationName || 'My Station').trim().slice(0, 80),
+    homeGrid,
+    bands: uniqueSorted((Array.isArray(input.bands) ? input.bands : []).map(String).map(v => v.toUpperCase()).filter(v => allowedBands.has(v))),
+    modes: uniqueSorted((Array.isArray(input.modes) ? input.modes : []).map(String).map(v => v.toUpperCase()).filter(v => allowedModes.has(v))),
+    autoRotate: Boolean(input.autoRotate),
+    showStats: Boolean(input.showStats),
+    showCallsigns: Boolean(input.showCallsigns),
+    showMode: Boolean(input.showMode),
+    showDates: Boolean(input.showDates),
+    showTimes: Boolean(input.showTimes),
+    showRemoteGrid: Boolean(input.showRemoteGrid),
+    homePrecision: precisionValues.has(input.homePrecision) ? input.homePrecision : 'grid4',
+    remotePrecision: precisionValues.has(input.remotePrecision) ? input.remotePrecision : 'grid4',
+    maxPaths: Math.max(100, Math.min(10_000, Number(input.maxPaths) || 2500))
+  };
+}
+
+function positionAtPrecision(lat, lon, gridValue, precision) {
+  if (precision === 'exact') return { lat, lon };
+  const length = precision === 'grid6' ? 6 : 4;
+  const gridText = String(gridValue || '').trim().toUpperCase();
+  if (gridText.length >= length) {
+    const p = maidenheadToLatLon(gridText.slice(0, length));
+    if (p) return p;
+  }
+  if (precision === 'grid6') return { lat: Math.round(lat * 20) / 20, lon: Math.round(lon * 10) / 10 };
+  return { lat: Math.round(lat), lon: Math.round(lon / 2) * 2 };
+}
+
+function publicHome(settings) {
+  const exact = maidenheadToLatLon(settings.homeGrid);
+  if (!exact) return null;
+  return positionAtPrecision(exact.lat, exact.lon, settings.homeGrid, settings.homePrecision);
+}
+
+function filterAllowedQsos(qsos, settings) {
+  const bands = new Set(settings.bands || []);
+  const modes = new Set(settings.modes || []);
+  return qsos.filter(q => bands.has(q.band) && modes.has(q.mode));
+}
+
+function qsoSortKey(q) {
+  return `${String(q.date || '').padStart(8, '0')}${String(q.time || '').padStart(6, '0')}${String(q.sourceId || 0).padStart(12, '0')}`;
+}
+
+function sanitizePublicQso(q, settings) {
+  const p = positionAtPrecision(q.lat, q.lon, q.grid, settings.remotePrecision);
+  const out = { band: q.band, lat: p.lat, lon: p.lon };
+  if (settings.showMode) out.mode = q.mode;
+  if (settings.showCallsigns) out.call = q.call;
+  if (settings.showDates) out.date = q.date;
+  if (settings.showTimes) out.time = q.time;
+  if (settings.showRemoteGrid) out.grid = q.grid;
+  return out;
+}
+
+function publicExposureSummary(settings, qsoCount, returnedQsos) {
+  return {
+    qsoCount,
+    returnedQsos,
+    required: ['approximate QSO coordinates', 'band'],
+    optional: {
+      callsign: settings.showCallsigns,
+      mode: settings.showMode,
+      date: settings.showDates,
+      time: settings.showTimes,
+      remoteGrid: settings.showRemoteGrid
+    },
+    homePrecision: settings.homePrecision,
+    remotePrecision: settings.remotePrecision
+  };
+}
+
+async function rebuildPublicSnapshot() {
+  const { qsos, settings } = await getState();
+  const allowed = filterAllowedQsos(qsos, settings).sort((a, b) => qsoSortKey(b).localeCompare(qsoSortKey(a)));
+  const limited = allowed.slice(0, settings.maxPaths);
+  const payload = {
+    version: 2,
+    settings: {
+      stationName: settings.stationName,
+      home: publicHome(settings),
+      autoRotate: settings.autoRotate,
+      showStats: settings.showStats,
+      maxPaths: settings.maxPaths
+    },
+    qsoCount: allowed.length,
+    returnedQsos: limited.length,
+    qsos: limited.map(q => sanitizePublicQso(q, settings))
+  };
+  await writeJson(PUBLIC_SNAPSHOT_FILE, payload);
+  const body = JSON.stringify(payload);
+  publicCache = {
+    data: payload,
+    body,
+    etag: `"${crypto.createHash('sha256').update(body).digest('base64url')}"`,
+    summary: publicExposureSummary(settings, payload.qsoCount, payload.returnedQsos)
+  };
+  return publicCache;
+}
+
+function encryptionKey() {
+  if (!CONFIG_ENCRYPTION_KEY) return null;
+  return crypto.createHash('sha256').update(CONFIG_ENCRYPTION_KEY).digest();
+}
+
+function encryptSecret(value) {
+  if (!value) return '';
+  const key = encryptionKey();
+  if (!key) return value;
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const ciphertext = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `v1:${iv.toString('base64url')}:${tag.toString('base64url')}:${ciphertext.toString('base64url')}`;
+}
+
+function decryptSecret(value) {
+  if (!value) return '';
+  if (!value.startsWith('v1:')) return value;
+  const key = encryptionKey();
+  if (!key) throw new Error('CONFIG_ENCRYPTION_KEY is required to decrypt the stored Wavelog token.');
+  const [, ivText, tagText, cipherText] = value.split(':');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(ivText, 'base64url'));
+  decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
+  return Buffer.concat([decipher.update(Buffer.from(cipherText, 'base64url')), decipher.final()]).toString('utf8');
+}
+
+async function getWavelogConfig() {
+  const raw = await readJson(WAVELOG_FILE, wavelogDefaults);
+  const token = raw.tokenEnc ? decryptSecret(raw.tokenEnc) : (raw.token || '');
+  return { ...wavelogDefaults, ...raw, token, tokenEnc: undefined };
+}
+
+async function saveWavelogConfig(config) {
+  const stored = { ...config };
+  delete stored.tokenEnc;
+  if (CONFIG_ENCRYPTION_KEY) {
+    stored.tokenEnc = encryptSecret(config.token || '');
+    delete stored.token;
+  } else {
+    stored.token = config.token || '';
+  }
+  await writeJson(WAVELOG_FILE, stored);
+}
+
+function normalizeWavelogBase(baseValue) {
+  let url;
+  try { url = new URL(String(baseValue || '').trim()); } catch { throw new Error('Wavelog URL is invalid.'); }
+  if (url.username || url.password) throw new Error('Wavelog URL must not contain credentials.');
+  if (url.protocol !== 'https:' && !(ALLOW_INSECURE_WAVELOG && url.protocol === 'http:')) throw new Error('Wavelog must use HTTPS unless ALLOW_INSECURE_WAVELOG=true.');
+  if (url.search || url.hash) throw new Error('Wavelog base URL must not contain a query string or fragment.');
+  url.pathname = url.pathname.replace(/\/+$/, '');
+  return url.toString().replace(/\/$/, '');
+}
+
+function buildWavelogEndpoint(baseValue) {
+  const base = new URL(normalizeWavelogBase(baseValue));
+  const current = base.pathname.replace(/\/+$/, '');
+  base.pathname = /\/index\.php$/i.test(current) ? `${current}/api/v2/qso` : `${current}/index.php/api/v2/qso`;
+  base.search = '';
+  base.hash = '';
+  return base;
+}
+
+function isPrivateIpv4(ip) {
+  const n = ipv4ToInt(ip);
+  if (n === null) return true;
+  const inRange = (base, bits) => {
+    const b = ipv4ToInt(base), mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
+    return (n & mask) === (b & mask);
+  };
+  return [
+    ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16],
+    ['172.16.0.0', 12], ['192.0.0.0', 24], ['192.0.2.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15],
+    ['198.51.100.0', 24], ['203.0.113.0', 24], ['224.0.0.0', 4], ['240.0.0.0', 4]
+  ].some(([base, bits]) => inRange(base, bits));
+}
+
+function isPrivateIp(ip) {
+  const version = net.isIP(ip);
+  if (version === 4) return isPrivateIpv4(ip);
+  if (version !== 6) return true;
+  const value = ip.toLowerCase();
+  return value === '::' || value === '::1' || value.startsWith('fc') || value.startsWith('fd') || value.startsWith('fe8') || value.startsWith('fe9') || value.startsWith('fea') || value.startsWith('feb') || value.startsWith('2001:db8:');
+}
+
+async function assertSafeWavelogTarget(url) {
+  const host = url.hostname.toLowerCase();
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) {
+    if (!ALLOW_PRIVATE_WAVELOG) throw new Error('Private/local Wavelog hosts require ALLOW_PRIVATE_WAVELOG=true.');
+    return;
+  }
+  const addresses = net.isIP(host) ? [{ address: host }] : await dns.lookup(host, { all: true, verbatim: true });
+  if (!addresses.length) throw new Error('Wavelog hostname did not resolve.');
+  if (!ALLOW_PRIVATE_WAVELOG && addresses.some(({ address }) => isPrivateIp(address))) throw new Error('Wavelog hostname resolves to a private/reserved address; set ALLOW_PRIVATE_WAVELOG=true only if intended.');
+}
+
+async function requestWavelogJson(url, config) {
+  await assertSafeWavelogTarget(url);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30_000);
+  try {
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${config.token}`, Accept: 'application/json' },
+      redirect: 'error',
+      signal: controller.signal
+    });
+    const text = await response.text();
+    let json = {};
+    if (text) {
+      try { json = JSON.parse(text); } catch { throw new Error('Wavelog returned invalid JSON.'); }
+    }
+    if (!response.ok) throw new Error(json?.error?.message || json?.message || `Wavelog request failed (${response.status}).`);
+    return json;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function syncWavelog(full = false) {
+  if (syncing) throw new Error('Sync already running.');
+  syncing = true;
+  try {
+    let config = await getWavelogConfig();
+    if (!config.baseUrl || !config.token) throw new Error('Configure the Wavelog URL and read-only API token first.');
+    if (!config.token.startsWith('wl2_')) throw new Error('Use a Wavelog API v2 token (wl2_...) with qso:read only.');
+    const since = full ? 0 : Number(config.lastSyncId) || 0;
+    let page = 1, maxId = since;
+    const rows = [];
+    for (;;) {
+      const url = buildWavelogEndpoint(config.baseUrl);
+      url.searchParams.set('page', String(page));
+      url.searchParams.set('per_page', '5000');
+      if (since) url.searchParams.set('since_id', String(since));
+      if (config.stationIds) url.searchParams.set('station_id', config.stationIds);
+      const result = await requestWavelogJson(url, config);
+      const data = Array.isArray(result.data) ? result.data : [];
+      rows.push(...data);
+      if (rows.length > 500_000) throw new Error('Wavelog sync exceeded the safety record limit.');
+      for (const row of data) maxId = Math.max(maxId, Number(row.id) || 0);
+      if (!result.meta?.has_more) break;
+      page++;
+      if (page > 1000) throw new Error('Wavelog pagination exceeded the safety limit.');
+    }
+
+    const normalized = rows.map(row => normalizeQso(row)).filter(Boolean);
+    const existing = full ? [] : await readJson(QSO_FILE, []);
+    const map = new Map(existing.map(q => [q.sourceId ? `w:${q.sourceId}` : crypto.createHash('sha1').update(JSON.stringify(q)).digest('hex'), q]));
+    for (const q of normalized) map.set(`w:${q.sourceId}`, q);
+    const all = [...map.values()];
+    await writeJson(QSO_FILE, all);
+    config = { ...config, lastSyncId: maxId, lastSyncAt: new Date().toISOString(), lastSyncError: null };
+    await saveWavelogConfig(config);
+    await rebuildPublicSnapshot();
+    return { fetched: rows.length, usable: normalized.length, stored: all.length, lastSyncId: maxId };
+  } catch (error) {
+    try {
+      const config = await getWavelogConfig();
+      await saveWavelogConfig({ ...config, lastSyncError: String(error.message || error) });
+    } catch {}
+    throw error;
+  } finally {
+    syncing = false;
+  }
+}
+
+async function autoSync() {
+  try {
+    const config = await getWavelogConfig();
+    const minutes = Number(config.autoSyncMinutes) || 0;
+    if (!minutes || !config.baseUrl || !config.token || syncing) return;
+    const last = config.lastSyncAt ? Date.parse(config.lastSyncAt) : 0;
+    if (Date.now() - last < minutes * 60_000) return;
+    await syncWavelog(false);
+  } catch (error) {
+    console.error('Automatic Wavelog sync failed:', error.message);
+  }
+}
+
+const worldGeoJson = topojson.feature(worldAtlas, worldAtlas.objects.countries);
+const worldBody = JSON.stringify(worldGeoJson);
+const worldEtag = `"${crypto.createHash('sha256').update(worldBody).digest('base64url')}"`;
+
+app.disable('x-powered-by');
+app.set('trust proxy', 1);
+app.use(express.json({ limit: '128kb', strict: true }));
+app.use(commonSecurityHeaders);
+app.use('/assets', express.static(PUBLIC, { index: false, maxAge: '1h', etag: true }));
+
+app.get('/', (req, res) => res.redirect('/embed'));
+app.get('/embed', embedDocumentHeaders, (req, res) => res.sendFile(path.join(PUBLIC, 'embed.html')));
+app.get('/admin', adminApiRateLimit, adminAuth, adminDocumentHeaders, (req, res) => res.sendFile(path.join(PUBLIC, 'admin.html')));
+
+app.get('/api/world', publicApiRateLimit, (req, res) => {
+  res.set('Cache-Control', 'public, max-age=604800, immutable');
+  res.set('ETag', worldEtag);
+  if (req.get('if-none-match') === worldEtag) return res.status(304).end();
+  res.type('application/geo+json').send(worldBody);
+});
+
+app.get('/api/public', publicApiRateLimit, async (req, res) => {
+  if (!publicCache) await rebuildPublicSnapshot();
+  res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
+  res.set('ETag', publicCache.etag);
+  if (req.get('if-none-match') === publicCache.etag) return res.status(304).end();
+  res.type('application/json').send(publicCache.body);
+});
+
+app.use('/api/admin', adminApiRateLimit, adminAuth, (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+
+app.get('/api/admin/state', async (req, res) => {
+  const state = await getState();
+  const wavelog = await getWavelogConfig();
+  if (!publicCache) await rebuildPublicSnapshot();
+  res.json({
+    meta: state.meta,
+    settings: state.settings,
+    wavelog: {
+      baseUrl: wavelog.baseUrl,
+      stationIds: wavelog.stationIds,
+      autoSyncMinutes: wavelog.autoSyncMinutes,
+      lastSyncId: wavelog.lastSyncId,
+      lastSyncAt: wavelog.lastSyncAt,
+      lastSyncError: wavelog.lastSyncError,
+      tokenConfigured: Boolean(wavelog.token),
+      tokenEncrypted: Boolean(CONFIG_ENCRYPTION_KEY),
+      syncing
+    },
+    csrfToken,
+    publicExposure: publicCache.summary,
+    iframeHtml: `<iframe src="${BASE}/embed" width="100%" height="620" style="border:0" loading="lazy"></iframe>`
+  });
+});
+
+app.post('/api/admin/settings', requireCsrf, async (req, res) => {
+  try {
+    const state = await getState();
+    const settings = sanitizeSettings(req.body, state.meta);
+    await writeJson(SETTINGS_FILE, settings);
+    const snapshot = await rebuildPublicSnapshot();
+    res.json({ ok: true, visibleQsos: snapshot.data.qsoCount, returnedQsos: snapshot.data.returnedQsos, publicExposure: snapshot.summary });
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Invalid settings.' });
+  }
+});
+
+app.post('/api/admin/upload', requireCsrf, upload.single('adif'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Choose an ADIF file.' });
+    const name = String(req.file.originalname || '').toLowerCase();
+    if (!name.endsWith('.adi') && !name.endsWith('.adif')) return res.status(400).json({ error: 'Only .adi or .adif files are accepted.' });
+    const text = req.file.buffer.toString('utf8');
+    if (!/<EOR>/i.test(text)) return res.status(400).json({ error: 'The uploaded file does not look like ADIF.' });
+    const records = parseAdif(text);
+    const qsos = records.map(row => normalizeQso(row, 'adif')).filter(Boolean);
+    await writeJson(QSO_FILE, qsos);
+    await rebuildPublicSnapshot();
+    res.json({ importedRecords: records.length, usableQsos: qsos.length });
+  } catch (error) {
+    res.status(error instanceof multer.MulterError ? 413 : 400).json({ error: error.message || 'Upload failed.' });
+  }
+});
+
+app.post('/api/admin/wavelog/config', requireCsrf, async (req, res) => {
+  try {
+    const old = await getWavelogConfig();
+    const baseUrl = req.body.baseUrl ? normalizeWavelogBase(req.body.baseUrl) : '';
+    const token = String(req.body.token || '').trim() || old.token;
+    if (token && !token.startsWith('wl2_')) throw new Error('Use a Wavelog API v2 token (wl2_...) with qso:read only.');
+    const stationIds = String(req.body.stationIds || '').trim();
+    if (stationIds && !/^\d+(,\d+)*$/.test(stationIds)) throw new Error('Station IDs must be comma-separated numbers.');
+    const autoSyncMinutes = Math.max(0, Math.min(1440, Number(req.body.autoSyncMinutes) || 0));
+    const next = { ...old, baseUrl, token, stationIds, autoSyncMinutes };
+    await saveWavelogConfig(next);
+    res.json({ ok: true, tokenEncrypted: Boolean(CONFIG_ENCRYPTION_KEY) });
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Invalid Wavelog configuration.' });
+  }
+});
+
+app.post('/api/admin/wavelog/test', requireCsrf, async (req, res) => {
+  try {
+    const config = await getWavelogConfig();
+    if (!config.baseUrl || !config.token) throw new Error('Configure Wavelog URL and token first.');
+    const url = buildWavelogEndpoint(config.baseUrl);
+    url.searchParams.set('per_page', '1');
+    await requestWavelogJson(url, config);
+    res.json({ ok: true, host: url.hostname });
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Connection test failed.' });
+  }
+});
+
+app.post('/api/admin/wavelog/sync', requireCsrf, async (req, res) => {
+  try {
+    res.json({ ok: true, ...await syncWavelog(Boolean(req.body?.full)) });
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Sync failed.' });
+  }
+});
+
+app.use((error, req, res, next) => {
+  if (error instanceof multer.MulterError) return res.status(413).json({ error: 'Upload rejected by safety limits.' });
+  console.error(error);
+  if (res.headersSent) return next(error);
+  res.status(500).json({ error: 'Internal server error.' });
+});
+
+async function start() {
+  failFastOnUnsafeProductionConfig();
+  await fs.mkdir(DATA, { recursive: true, mode: 0o700 });
+  await rebuildPublicSnapshot();
+  app.listen(PORT, '0.0.0.0', () => console.log(`QSO Trails listening on ${BASE}`));
+  setInterval(autoSync, 60_000).unref();
+}
+
+start().catch(error => {
+  console.error('QSO Trails failed to start:', error.message);
+  process.exit(1);
+});
