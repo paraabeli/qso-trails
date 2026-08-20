@@ -18,8 +18,10 @@
     const box=document.createElement('div');box.id='staticPublishControls';
     const projectionLabel=document.createElement('label');projectionLabel.textContent='Projection';
     const projection=document.createElement('select');projection.id='staticProjection';projection.innerHTML='<option value="globe">3D globe</option><option value="mercator">Mercator map</option>';projectionLabel.append(projection);
-    box.append(projectionLabel,makeHeading('Static visible text'),makeToggle('staticShowName','Station label'),makeToggle('staticShowStats','QSO count'),makeToggle('staticShowLegend','Band legend'),makeToggle('staticShowDxcc','DXCC summary'),makeToggle('staticShowUpdated','Generated timestamp'));
-    const note=document.createElement('small');note.textContent='The PNG is generated only from the sanitized public snapshot. Projection and text choices do not widen data exposure.';box.append(note);
+    const themeLabel=document.createElement('label');themeLabel.textContent='Static theme';
+    const theme=document.createElement('select');theme.id='staticTheme';theme.innerHTML='<option value="retro">Retro</option><option value="clean">Clean</option><option value="futuristic">Futuristic</option><option value="rough">Rough / field-map</option>';themeLabel.append(theme);
+    box.append(projectionLabel,themeLabel,makeHeading('Static visible text'),makeToggle('staticShowName','Station label'),makeToggle('staticShowStats','QSO count'),makeToggle('staticShowLegend','Band legend'),makeToggle('staticShowDxcc','DXCC summary'),makeToggle('staticShowUpdated','Generated timestamp'));
+    const note=document.createElement('small');note.textContent='Theme and projection are visual-only. The PNG still uses only the sanitized public snapshot.';box.append(note);
     staticPreview.before(box);
   }
 
@@ -48,6 +50,7 @@
   function staticUrl(){
     const url=new URL('/static/qrz.png',rememberPublicOrigin());
     url.searchParams.set('projection',$('staticProjection')?.value==='mercator'?'mercator':'globe');
+    url.searchParams.set('theme',['retro','clean','futuristic','rough'].includes($('staticTheme')?.value)?$('staticTheme').value:'retro');
     setFlag(url,'name',checked('staticShowName'));setFlag(url,'stats',checked('staticShowStats'));setFlag(url,'legend',checked('staticShowLegend'));setFlag(url,'dxcc',checked('staticShowDxcc'));setFlag(url,'updated',checked('staticShowUpdated'));
     return url;
   }
@@ -59,7 +62,7 @@
   }
 
   for(const id of ['embedShowName','embedShowStats','embedShowLegend','embedShowDxcc','embedShowDetails'])$(id)?.addEventListener('change',applyEmbedControls);
-  for(const id of ['staticProjection','staticShowName','staticShowStats','staticShowLegend','staticShowDxcc','staticShowUpdated'])$(id)?.addEventListener('change',applyStaticControls);
+  for(const id of ['staticProjection','staticTheme','staticShowName','staticShowStats','staticShowLegend','staticShowDxcc','staticShowUpdated'])$(id)?.addEventListener('change',applyStaticControls);
 
   if(iframePre)new MutationObserver(()=>queueMicrotask(()=>{rememberPublicOrigin();applyEmbedControls();})).observe(iframePre,{childList:true,characterData:true,subtree:true});
   const staticSnippet=$('staticSnippet');if(staticSnippet)new MutationObserver(()=>queueMicrotask(()=>{rememberPublicOrigin();applyStaticControls();})).observe(staticSnippet,{childList:true,characterData:true,subtree:true});
