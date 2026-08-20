@@ -12,8 +12,8 @@ jobs:
   node-security:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24.19.0'
       - run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
@@ -21,8 +21,29 @@ jobs:
       - run: npm run check
       - run: npm run audit:prod
       - name: Validate Compose
-        env:
+        env: &compose-env
           DOMAIN: qso.example.com
           ADMIN_PASSWORD: ci-only-long-random-password
           CONFIG_ENCRYPTION_KEY: ci-only-encryption-key-at-least-32-characters-long
         run: docker compose config --quiet
+      - name: Build production app image
+        env: *compose-env
+        run: docker compose build app
+      - name: Start production app for smoke test
+        env: *compose-env
+        run: docker compose run -d --name qso-trails-ci -p 3000:3000 app
+      - name: Smoke test production endpoints
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/embed >/dev/null; then break; fi
+            if [ "$attempt" = 30 ]; then docker logs qso-trails-ci; exit 1; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:3000/api/public -o public.json
+          node -e "const d=require('./public.json'); if(!Array.isArray(d.qsos)||!d.settings) process.exit(1)"
+          curl -fsS http://127.0.0.1:3000/static/qrz.png -o qrz.png
+          test "$(xxd -p -l 8 qrz.png)" = "89504e470d0a1a0a"
+          test "$(stat -c%s qrz.png)" -gt 1000
+      - name: Clean up smoke container
+        if: always()
+        run: docker rm -f qso-trails-ci >/dev/null 2>&1 || true
