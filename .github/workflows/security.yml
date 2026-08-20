@@ -46,10 +46,12 @@ jobs:
           done
           curl -fsS http://127.0.0.1:3000/api/public -o public.json
           node -e "const d=require('./public.json'); if(!Array.isArray(d.qsos)||!d.settings) process.exit(1)"
-          curl -fsS http://127.0.0.1:3000/static/qrz.png -o qrz-globe.png
-          test "$(xxd -p -l 8 qrz-globe.png)" = "89504e470d0a1a0a"
-          test "$(stat -c%s qrz-globe.png)" -gt 1000
-          curl -fsS 'http://127.0.0.1:3000/static/qrz.png?projection=mercator&name=0&stats=0&legend=0&dxcc=0&updated=0' -o qrz-mercator.png
+          for theme in retro clean futuristic rough; do
+            curl -fsS "http://127.0.0.1:3000/static/qrz.png?projection=globe&theme=$theme" -o "qrz-$theme-globe.png"
+            test "$(xxd -p -l 8 qrz-$theme-globe.png)" = "89504e470d0a1a0a"
+            test "$(stat -c%s qrz-$theme-globe.png)" -gt 1000
+          done
+          curl -fsS 'http://127.0.0.1:3000/static/qrz.png?projection=mercator&theme=clean&name=0&stats=0&legend=0&dxcc=0&updated=0' -o qrz-mercator.png
           test "$(xxd -p -l 8 qrz-mercator.png)" = "89504e470d0a1a0a"
           test "$(stat -c%s qrz-mercator.png)" -gt 1000
       - name: Clean up smoke container
