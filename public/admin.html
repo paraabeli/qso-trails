@@ -75,7 +75,21 @@
         <pre id="publicJson">Loading…</pre>
       </details>
 
-      <h3>Iframe</h3><pre id="iframe"></pre>
+      <h3>Iframe</h3>
+      <label>Embed size
+        <select id="iframeSize">
+          <option value="responsive">Responsive · 100% × 620</option>
+          <option value="compact">Compact · 480 × 420</option>
+          <option value="qrz">QRZ · 640 × 500</option>
+          <option value="wide">Wide · 900 × 620</option>
+          <option value="custom">Custom</option>
+        </select>
+      </label>
+      <div id="iframeCustom" class="row" hidden>
+        <label>Width<input id="iframeWidth" type="number" min="320" max="2000" value="700"></label>
+        <label>Height<input id="iframeHeight" type="number" min="300" max="1400" value="550"></label>
+      </div>
+      <pre id="iframe"></pre>
     </section>
   </div>
 
