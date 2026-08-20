@@ -1,1 +1,86 @@
-<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>QSO Trails Admin</title><link rel="stylesheet" href="/assets/style.css"><main><h1>QSO Trails Admin</h1><p>Sync Wavelog or upload ADIF, then choose exactly what the public iframe may display.</p><div class="cols"><section class="card"><h2>Wavelog</h2><label>Base URL<input id="wlurl" placeholder="https://log.example.com"></label><label>API v2 token<input id="wltoken" type="password" placeholder="wl2_…"></label><label>Station IDs<input id="wlstations" placeholder="blank = all"></label><label>Auto sync<select id="wlauto"><option value="0">Off</option><option value="5">5 min</option><option value="15">15 min</option><option value="30">30 min</option><option value="60">Hourly</option><option value="360">6 hours</option></select></label><div class="row"><button id="savewl">Save</button><button id="testwl">Test</button><button id="syncwl">Sync new</button><button id="fullwl">Full resync</button></div><p id="wlstatus" class="status"></p><h2>ADIF fallback</h2><input id="adif" type="file" accept=".adi,.adif"><button id="upload">Upload ADIF</button></section><section class="card"><h2>Public view</h2><label>Station / callsign<input id="name"></label><label>Home Maidenhead<input id="grid"></label><h3>Bands</h3><div id="bands" class="checks"></div><h3>Modes</h3><div id="modes" class="checks"></div><label class="inline"><input id="rotate" type="checkbox"> Auto rotate</label><label class="inline"><input id="stats" type="checkbox"> Show QSO count</label><label class="inline"><input id="calls" type="checkbox"> Expose callsigns publicly</label><label>Max paths<input id="max" type="number" min="100" max="10000"></label><button id="publish">Publish selected view</button><p id="status" class="status"></p><h3>Iframe</h3><pre id="iframe"></pre></section></div><section class="card"><iframe id="preview" src="/embed"></iframe></section></main><script src="/assets/admin.js"></script>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>QSO Trails Admin</title>
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<main>
+  <h1>QSO Trails Admin</h1>
+  <p>Sync Wavelog or upload ADIF, then choose exactly what the public iframe is allowed to expose.</p>
+
+  <div class="cols">
+    <section class="card">
+      <h2>Wavelog</h2>
+      <label>Base URL<input id="wlurl" placeholder="https://log.example.com" autocomplete="url"></label>
+      <label>API v2 token<input id="wltoken" type="password" placeholder="wl2_…" autocomplete="new-password"></label>
+      <small id="tokenNote"></small>
+      <label>Station IDs<input id="wlstations" placeholder="blank = all" inputmode="numeric"></label>
+      <label>Auto sync
+        <select id="wlauto">
+          <option value="0">Off</option><option value="5">5 min</option><option value="15">15 min</option>
+          <option value="30">30 min</option><option value="60">Hourly</option><option value="360">6 hours</option>
+          <option value="720">12 hours</option><option value="1440">Daily</option>
+        </select>
+      </label>
+      <div class="row"><button id="savewl">Save</button><button id="testwl">Test</button><button id="syncwl">Sync new</button><button id="fullwl">Full resync</button></div>
+      <p id="wlstatus" class="status"></p>
+
+      <h2>ADIF fallback</h2>
+      <input id="adif" type="file" accept=".adi,.adif,text/plain">
+      <button id="upload">Upload ADIF</button>
+    </section>
+
+    <section class="card">
+      <h2>Public view & privacy</h2>
+      <label>Station / callsign label<input id="name" maxlength="80"></label>
+      <label>Private home Maidenhead<input id="grid" maxlength="8"></label>
+
+      <label>Public home position precision
+        <select id="homePrecision">
+          <option value="grid4">4-character grid center (~100 km)</option>
+          <option value="grid6">6-character grid center (~5 km)</option>
+          <option value="exact">Exact configured locator</option>
+        </select>
+      </label>
+      <label>Public QSO endpoint precision
+        <select id="remotePrecision">
+          <option value="grid4">4-character grid center (~100 km)</option>
+          <option value="grid6">6-character grid center (~5 km)</option>
+          <option value="exact">Exact stored coordinate</option>
+        </select>
+      </label>
+
+      <h3>Bands</h3><div id="bands" class="checks"></div>
+      <h3>Modes used for server-side filtering</h3><div id="modes" class="checks"></div>
+
+      <label class="inline"><input id="rotate" type="checkbox"> Auto rotate</label>
+      <label class="inline"><input id="stats" type="checkbox"> Show QSO count</label>
+      <label class="inline"><input id="calls" type="checkbox"> Expose callsigns publicly</label>
+      <label class="inline"><input id="showMode" type="checkbox"> Expose mode publicly</label>
+      <label class="inline"><input id="showDates" type="checkbox"> Expose QSO dates publicly</label>
+      <label class="inline"><input id="showTimes" type="checkbox"> Expose QSO times publicly</label>
+      <label class="inline"><input id="showRemoteGrid" type="checkbox"> Expose remote Maidenhead grids publicly</label>
+      <label>Maximum public QSO records / paths<input id="max" type="number" min="100" max="10000" step="100"></label>
+
+      <button id="publish" class="primary">Publish selected view</button>
+      <p id="status" class="status"></p>
+
+      <h3>What the Internet sees</h3>
+      <pre id="exposure">Loading…</pre>
+      <details>
+        <summary>Sample public JSON</summary>
+        <pre id="publicJson">Loading…</pre>
+      </details>
+
+      <h3>Iframe</h3><pre id="iframe"></pre>
+    </section>
+  </div>
+
+  <section class="card"><iframe id="preview" title="Public QSO Trails preview" src="/embed"></iframe></section>
+</main>
+<script src="/assets/admin.js"></script>
+</body>
+</html>
