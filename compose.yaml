@@ -1,13 +1,60 @@
+name: qso-trails
+
 services:
-  qso-globe:
-    build: .
+  app:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM node:20-alpine
+        WORKDIR /app
+        COPY package.json ./
+        RUN npm install --omit=dev
+        COPY server.js ./
+        COPY public ./public
+        RUN mkdir -p /app/data && chown -R node:node /app
+        USER node
+        ENV PORT=3000
+        EXPOSE 3000
+        CMD ["node", "server.js"]
     restart: unless-stopped
-    ports:
-      - "3000:3000"
     environment:
       PORT: "3000"
       ADMIN_USER: "${ADMIN_USER:-admin}"
-      ADMIN_PASSWORD: "${ADMIN_PASSWORD:?Set ADMIN_PASSWORD}"
-      PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-http://localhost:3000}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}"
+      PUBLIC_BASE_URL: "https://${DOMAIN:?Set DOMAIN in .env}"
     volumes:
-      - ./data:/app/data
+      - qso_data:/app/data
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/embed >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  caddy:
+    image: caddy:2.11-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    command:
+      - reverse-proxy
+      - --from
+      - "${DOMAIN:?Set DOMAIN in .env}"
+      - --to
+      - "app:3000"
+      - --access-log
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  qso_data:
+  caddy_data:
+  caddy_config:
