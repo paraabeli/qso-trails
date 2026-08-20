@@ -42,6 +42,10 @@ The public globe never receives the Wavelog token or raw private QSO store.
 - Non-root/read-only app container with dropped Linux capabilities
 - GitHub Actions dependency audit and Dependabot configuration
 - Selectable iframe sizes with live admin preview
+- Band legend in the public globe
+- Click QSO points for distance and initial bearing
+- Optional visual date-range filtering
+- Optional live day/night grayline overlay
 
 ## Requirements
 
@@ -112,6 +116,26 @@ The default is intentionally conservative:
 The Admin page includes **What the Internet sees** and a sample `/api/public` response.
 
 `maxPaths` is enforced on the server. If 20,000 QSOs match your filters but `maxPaths=2500`, only 2,500 QSO records are sent to each public browser while the displayed QSO count can still show 20,000.
+
+## Public globe insights
+
+The embed view includes a band-color legend. Clicking a visible QSO point shows its distance and initial bearing from the public home position. Callsign, mode, grid and date are shown only when those fields were already enabled in the privacy controls.
+
+The iframe generator also supports a visual date-range selector and a live day/night grayline overlay. Date filtering is intentionally client-side over the already-sanitized public snapshot: it can only hide records that were already published, never reveal additional records. Because of that, date filtering is available only when **Expose QSO dates publicly** is enabled.
+
+Supported visual date presets are:
+
+- all published QSOs
+- last 24 hours
+- last 7 days
+- last 30 days
+- last year
+
+The generated iframe may look like:
+
+```html
+<iframe src="https://qso.example.com/embed?days=30&grayline=1" width="640" height="500" style="border:0" loading="lazy"></iframe>
+```
 
 ## QRZ iframe
 
