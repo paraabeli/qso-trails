@@ -1,7 +1,7 @@
 'use strict';
 (()=>{
   const $=id=>document.getElementById(id);
-  const canvas=$('c'),details=$('details'),dxcc=$('dxcc'),panel=$('dxccPanel'),grid=$('dxccGrid'),recordButton=$('recordButton'),downloadButton=$('downloadWebm'),replayRange=$('replayRange'),replayButton=$('replayButton'),loopToggle=$('loopToggle'),liveToggle=$('liveToggle');
+  const canvas=$('c'),details=$('details'),dxcc=$('dxccSummary'),panel=$('dxccPanel'),grid=$('dxccGrid'),recordButton=$('recordButton'),downloadButton=$('downloadWebm'),replayRange=$('replayRange'),replayButton=$('replayButton'),loopToggle=$('loopToggle'),liveToggle=$('liveToggle');
   if(!canvas||!recordButton||!downloadButton)return;
 
   let recorder=null,chunks=[],recordingBlob=null,recordingUrl='',completionWatch=null,statsTimer=null;
