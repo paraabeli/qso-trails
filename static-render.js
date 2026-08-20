@@ -4,138 +4,52 @@ const zlib = require('zlib');
 
 const WIDTH = 640;
 const HEIGHT = 500;
-const CX = 320;
-const CY = 238;
-const RADIUS = 205;
+const GLOBE_CX = 320;
+const GLOBE_CY = 205;
+const GLOBE_RADIUS = 182;
+const MAP_X = 10;
+const MAP_Y = 18;
+const MAP_W = 620;
+const MAP_H = 310;
+const MERCATOR_LIMIT = 85.05112878;
+
+const FONT = {
+  A:['01110','10001','10001','11111','10001','10001','10001'],B:['11110','10001','10001','11110','10001','10001','11110'],C:['01111','10000','10000','10000','10000','10000','01111'],D:['11110','10001','10001','10001','10001','10001','11110'],E:['11111','10000','10000','11110','10000','10000','11111'],F:['11111','10000','10000','11110','10000','10000','10000'],G:['01111','10000','10000','10111','10001','10001','01110'],H:['10001','10001','10001','11111','10001','10001','10001'],I:['11111','00100','00100','00100','00100','00100','11111'],J:['00111','00010','00010','00010','10010','10010','01100'],K:['10001','10010','10100','11000','10100','10010','10001'],L:['10000','10000','10000','10000','10000','10000','11111'],M:['10001','11011','10101','10101','10001','10001','10001'],N:['10001','11001','10101','10011','10001','10001','10001'],O:['01110','10001','10001','10001','10001','10001','01110'],P:['11110','10001','10001','11110','10000','10000','10000'],Q:['01110','10001','10001','10001','10101','10010','01101'],R:['11110','10001','10001','11110','10100','10010','10001'],S:['01111','10000','10000','01110','00001','00001','11110'],T:['11111','00100','00100','00100','00100','00100','00100'],U:['10001','10001','10001','10001','10001','10001','01110'],V:['10001','10001','10001','10001','10001','01010','00100'],W:['10001','10001','10001','10101','10101','10101','01010'],X:['10001','10001','01010','00100','01010','10001','10001'],Y:['10001','10001','01010','00100','00100','00100','00100'],Z:['11111','00001','00010','00100','01000','10000','11111'],
+  '0':['01110','10001','10011','10101','11001','10001','01110'],'1':['00100','01100','00100','00100','00100','00100','01110'],'2':['01110','10001','00001','00010','00100','01000','11111'],'3':['11110','00001','00001','01110','00001','00001','11110'],'4':['00010','00110','01010','10010','11111','00010','00010'],'5':['11111','10000','10000','11110','00001','00001','11110'],'6':['01110','10000','10000','11110','10001','10001','01110'],'7':['11111','00001','00010','00100','01000','01000','01000'],'8':['01110','10001','10001','01110','10001','10001','01110'],'9':['01110','10001','10001','01111','00001','00001','01110'],
+  ' ':['00000','00000','00000','00000','00000','00000','00000'],'-':['00000','00000','00000','11111','00000','00000','00000'],'/':['00001','00010','00010','00100','01000','01000','10000'],'.':['00000','00000','00000','00000','00000','00110','00110'],':':['00000','00110','00110','00000','00110','00110','00000'],'?':['01110','10001','00001','00010','00100','00000','00100']
+};
 
 function clampByte(value) { return Math.max(0, Math.min(255, Math.round(value))); }
+function makeRaster() { const pixels=Buffer.alloc(WIDTH*HEIGHT*4); for(let i=0;i<pixels.length;i+=4){pixels[i]=4;pixels[i+1]=10;pixels[i+2]=18;pixels[i+3]=255;} return pixels; }
+function blend(pixels,x,y,color,alpha=1){x=Math.round(x);y=Math.round(y);if(x<0||y<0||x>=WIDTH||y>=HEIGHT)return;const i=(y*WIDTH+x)*4,a=Math.max(0,Math.min(1,alpha));pixels[i]=clampByte(pixels[i]*(1-a)+color[0]*a);pixels[i+1]=clampByte(pixels[i+1]*(1-a)+color[1]*a);pixels[i+2]=clampByte(pixels[i+2]*(1-a)+color[2]*a);}
+function line(pixels,a,b,color,alpha=1,width=1,allowHidden=false){if(!a||!b||(!allowHidden&&(a.z<=0||b.z<=0)))return;const steps=Math.max(1,Math.ceil(Math.hypot(b.x-a.x,b.y-a.y)));for(let n=0;n<=steps;n++){const t=n/steps,x=a.x+(b.x-a.x)*t,y=a.y+(b.y-a.y)*t;for(let oy=-width;oy<=width;oy++)for(let ox=-width;ox<=width;ox++)if(ox*ox+oy*oy<=width*width)blend(pixels,x+ox,y+oy,color,alpha);}}
+function circle(pixels,x,y,radius,color,alpha=1){const r=Math.max(1,Math.round(radius));for(let oy=-r;oy<=r;oy++)for(let ox=-r;ox<=r;ox++)if(ox*ox+oy*oy<=r*r)blend(pixels,x+ox,y+oy,color,alpha);}
+function rect(pixels,x,y,w,h,color,alpha=1){for(let yy=Math.max(0,Math.floor(y));yy<Math.min(HEIGHT,Math.ceil(y+h));yy++)for(let xx=Math.max(0,Math.floor(x));xx<Math.min(WIDTH,Math.ceil(x+w));xx++)blend(pixels,xx,yy,color,alpha);}
+function drawChar(pixels,char,x,y,scale,color){const glyph=FONT[char]||FONT['?'];for(let row=0;row<7;row++)for(let col=0;col<5;col++)if(glyph[row][col]==='1')rect(pixels,x+col*scale,y+row*scale,scale,scale,color,1);return 6*scale;}
+function textWidth(text,scale){return String(text).length*6*scale;}
+function drawText(pixels,text,x,y,scale=2,color=[235,242,250],maxWidth=WIDTH-x-10){let cursor=x;for(const raw of String(text).toUpperCase()){if(cursor+6*scale>x+maxWidth)break;cursor+=drawChar(pixels,raw,x+(cursor-x),y,scale,color);}return cursor;}
+function fitText(text,maxWidth,preferred=3){for(let s=preferred;s>=1;s--)if(textWidth(text,s)<=maxWidth)return s;return 1;}
 
-function makeRaster() {
-  const pixels = Buffer.alloc(WIDTH * HEIGHT * 4);
-  for (let y = 0; y < HEIGHT; y++) {
-    for (let x = 0; x < WIDTH; x++) {
-      const i = (y * WIDTH + x) * 4;
-      const dx = (x - CX) / RADIUS, dy = (y - CY) / RADIUS, d = Math.sqrt(dx * dx + dy * dy);
-      let r = 4, g = 10, b = 18;
-      if (d <= 1) {
-        const light = Math.max(0, 1 - Math.hypot(dx + .28, dy + .32));
-        r = 7 + light * 30; g = 24 + light * 55; b = 43 + light * 72;
-      }
-      pixels[i] = clampByte(r); pixels[i + 1] = clampByte(g); pixels[i + 2] = clampByte(b); pixels[i + 3] = 255;
-    }
-  }
-  return pixels;
-}
+function rotatePoint(lat,lon,centerLat,centerLon){const la=lat*Math.PI/180,lo=lon*Math.PI/180;let x=Math.cos(la)*Math.sin(lo),y=Math.sin(la),z=Math.cos(la)*Math.cos(lo);const ry=-centerLon*Math.PI/180,cy=Math.cos(ry),sy=Math.sin(ry),x1=x*cy+z*sy,z1=-x*sy+z*cy,rx=centerLat*Math.PI/180*.72,cx=Math.cos(rx),sx=Math.sin(rx);return{x:x1,y:y*cx-z1*sx,z:y*sx+z1*cx};}
+function globeProject(lat,lon,centerLat,centerLon){const p=rotatePoint(lat,lon,centerLat,centerLon);return{x:GLOBE_CX+p.x*GLOBE_RADIUS,y:GLOBE_CY-p.y*GLOBE_RADIUS,z:p.z};}
+function mercatorProject(lat,lon){const limited=Math.max(-MERCATOR_LIMIT,Math.min(MERCATOR_LIMIT,Number(lat)||0)),rad=limited*Math.PI/180,merc=Math.log(Math.tan(Math.PI/4+rad/2));return{x:MAP_X+(Number(lon)+180)/360*MAP_W,y:MAP_Y+(1-(merc/Math.PI+1)/2)*MAP_H,z:1};}
+function greatCircle(a,b,t){const vector=p=>{const la=p.lat*Math.PI/180,lo=p.lon*Math.PI/180;return[Math.cos(la)*Math.sin(lo),Math.sin(la),Math.cos(la)*Math.cos(lo)]},u=vector(a),v=vector(b),dot=Math.max(-1,Math.min(1,u[0]*v[0]+u[1]*v[1]+u[2]*v[2])),omega=Math.acos(dot),sinOmega=Math.sin(omega);let q=u;if(sinOmega>=1e-6){const s0=Math.sin((1-t)*omega)/sinOmega,s1=Math.sin(t*omega)/sinOmega;q=[u[0]*s0+v[0]*s1,u[1]*s0+v[1]*s1,u[2]*s0+v[2]*s1];}return{lat:Math.asin(q[1])*180/Math.PI,lon:Math.atan2(q[0],q[2])*180/Math.PI};}
+function hslToRgb(h,s=.78,l=.64){h=((h%360)+360)%360/360;const hue=(p,q,t)=>{if(t<0)t++;if(t>1)t--;if(t<1/6)return p+(q-p)*6*t;if(t<1/2)return q;if(t<2/3)return p+(q-p)*(2/3-t)*6;return p;},q=l<.5?l*(1+s):l+s-l*s,p=2*l-q;return[clampByte(hue(p,q,h+1/3)*255),clampByte(hue(p,q,h)*255),clampByte(hue(p,q,h-1/3)*255)];}
+function bandColor(band){const hue=({'160M':280,'80M':260,'60M':235,'40M':210,'30M':185,'20M':160,'17M':130,'15M':95,'12M':65,'10M':35,'6M':10,'2M':330})[String(band||'').toUpperCase()]??200;return hslToRgb(hue);}
 
-function blend(pixels, x, y, color, alpha = 1) {
-  x = Math.round(x); y = Math.round(y);
-  if (x < 0 || y < 0 || x >= WIDTH || y >= HEIGHT) return;
-  const i = (y * WIDTH + x) * 4, a = Math.max(0, Math.min(1, alpha));
-  pixels[i] = clampByte(pixels[i] * (1 - a) + color[0] * a);
-  pixels[i + 1] = clampByte(pixels[i + 1] * (1 - a) + color[1] * a);
-  pixels[i + 2] = clampByte(pixels[i + 2] * (1 - a) + color[2] * a);
-}
+function drawGlobeBackground(pixels){for(let y=Math.max(0,GLOBE_CY-GLOBE_RADIUS);y<=Math.min(HEIGHT-1,GLOBE_CY+GLOBE_RADIUS);y++)for(let x=Math.max(0,GLOBE_CX-GLOBE_RADIUS);x<=Math.min(WIDTH-1,GLOBE_CX+GLOBE_RADIUS);x++){const dx=(x-GLOBE_CX)/GLOBE_RADIUS,dy=(y-GLOBE_CY)/GLOBE_RADIUS,d=Math.hypot(dx,dy);if(d<=1){const light=Math.max(0,1-Math.hypot(dx+.28,dy+.32));blend(pixels,x,y,[7+light*30,24+light*55,43+light*72],1);}}}
+function drawWorldGlobe(pixels,world,centerLat,centerLon){for(const feature of world.features||[]){const polygons=feature.geometry?.type==='Polygon'?[feature.geometry.coordinates]:feature.geometry?.coordinates||[];for(const polygon of polygons)for(const ring of polygon){let previous=null;for(const coord of ring){const current=globeProject(coord[1],coord[0],centerLat,centerLon);if(previous&&previous.z>0&&current.z>0&&Math.hypot(current.x-previous.x,current.y-previous.y)<80)line(pixels,previous,current,[112,160,132],.48,1);previous=current;}}}}
+function drawWorldMercator(pixels,world){rect(pixels,MAP_X,MAP_Y,MAP_W,MAP_H,[7,27,43],1);for(const feature of world.features||[]){const polygons=feature.geometry?.type==='Polygon'?[feature.geometry.coordinates]:feature.geometry?.coordinates||[];for(const polygon of polygons)for(const ring of polygon){let previous=null;for(const coord of ring){const current=mercatorProject(coord[1],coord[0]);if(previous&&Math.abs(current.x-previous.x)<MAP_W/2)line(pixels,previous,current,[112,160,132],.62,1,true);previous=current;}}}}
+function drawPathsGlobe(pixels,payload,centerLat,centerLon){const home=payload.settings.home;for(const q of (payload.qsos||[]).slice(0,2500)){let previous=null;for(let n=0;n<=20;n++){const point=greatCircle(home,q,n/20),current=globeProject(point.lat,point.lon,centerLat,centerLon);if(previous)line(pixels,previous,current,bandColor(q.band),.34,0);previous=current;}const endpoint=globeProject(q.lat,q.lon,centerLat,centerLon);if(endpoint.z>0)circle(pixels,endpoint.x,endpoint.y,2,bandColor(q.band),.9);}const hp=globeProject(home.lat,home.lon,centerLat,centerLon);circle(pixels,hp.x,hp.y,5,[255,255,255],1);circle(pixels,hp.x,hp.y,2,[255,200,80],1);}
+function drawPathsMercator(pixels,payload){const home=payload.settings.home,hp=mercatorProject(home.lat,home.lon);for(const q of (payload.qsos||[]).slice(0,2500)){let previous=null;for(let n=0;n<=28;n++){const point=greatCircle(home,q,n/28),current=mercatorProject(point.lat,point.lon);if(previous&&Math.abs(current.x-previous.x)<MAP_W/2)line(pixels,previous,current,bandColor(q.band),.34,0,true);previous=current;}const ep=mercatorProject(q.lat,q.lon);circle(pixels,ep.x,ep.y,2,bandColor(q.band),.9);}circle(pixels,hp.x,hp.y,5,[255,255,255],1);circle(pixels,hp.x,hp.y,2,[255,200,80],1);}
+function drawLegend(pixels,payload,y){const bands=[...new Set((payload.qsos||[]).map(q=>q.band).filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),undefined,{numeric:true})).slice(0,12);if(!bands.length)return y;let x=16,rowY=y;for(const band of bands){const label=String(band).toUpperCase(),itemW=12+textWidth(label,1)+12;if(x+itemW>624){x=16;rowY+=14;}circle(pixels,x+4,rowY+4,3,bandColor(band),1);drawText(pixels,label,x+11,rowY,1,[215,230,245],itemW-11);x+=itemW;}return rowY+14;}
+function footerLines(payload,options){const lines=[];if(options.showName){const label=String(payload?.settings?.stationName||'QSO Trails').trim();if(label)lines.push(label);}const summary=[];if(options.showStats)summary.push(`${Number(payload?.qsoCount||0).toLocaleString('en-US')} QSOS`);if(options.showDxcc){const dx=payload?.stats?.dxcc;if(dx?.metadataAvailable)summary.push(`${Number(dx.entities||0)} DXCC`,`${Number(dx.continents||0)} CONTINENTS`);}if(summary.length)lines.push(summary.join(' / '));if(options.showUpdated)lines.push(`UPDATED ${new Date().toISOString().slice(0,16).replace('T',' ')} UTC`);return lines;}
+function drawFooter(pixels,payload,options){let y=350;if(options.showLegend)y=drawLegend(pixels,payload,y);for(const lineText of footerLines(payload,options)){const scale=fitText(lineText,608,2);drawText(pixels,lineText,16,y,scale,[235,242,250],608);y+=8*scale+6;if(y>492)break;}}
 
-function line(pixels, a, b, color, alpha = 1, width = 1) {
-  if (!a || !b || a.z <= 0 || b.z <= 0) return;
-  const steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y)));
-  for (let n = 0; n <= steps; n++) {
-    const t = n / steps, x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t;
-    for (let oy = -width; oy <= width; oy++) for (let ox = -width; ox <= width; ox++) if (ox * ox + oy * oy <= width * width) blend(pixels, x + ox, y + oy, color, alpha);
-  }
-}
+function crc32(buffer){let crc=0xffffffff;for(const byte of buffer){crc^=byte;for(let k=0;k<8;k++)crc=(crc>>>1)^(0xedb88320&-(crc&1));}return(crc^0xffffffff)>>>0;}
+function chunk(type,data){const name=Buffer.from(type),length=Buffer.alloc(4),crc=Buffer.alloc(4);length.writeUInt32BE(data.length);crc.writeUInt32BE(crc32(Buffer.concat([name,data])));return Buffer.concat([length,name,data,crc]);}
+function encodePng(pixels){const raw=Buffer.alloc((WIDTH*4+1)*HEIGHT);for(let y=0;y<HEIGHT;y++){const offset=y*(WIDTH*4+1);raw[offset]=0;pixels.copy(raw,offset+1,y*WIDTH*4,(y+1)*WIDTH*4);}const ihdr=Buffer.alloc(13);ihdr.writeUInt32BE(WIDTH,0);ihdr.writeUInt32BE(HEIGHT,4);ihdr[8]=8;ihdr[9]=6;return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',ihdr),chunk('IDAT',zlib.deflateSync(raw,{level:9})),chunk('IEND',Buffer.alloc(0))]);}
 
-function circle(pixels, x, y, radius, color, alpha = 1) {
-  const r = Math.max(1, Math.round(radius));
-  for (let oy = -r; oy <= r; oy++) for (let ox = -r; ox <= r; ox++) if (ox * ox + oy * oy <= r * r) blend(pixels, x + ox, y + oy, color, alpha);
-}
+function renderStaticPng(payload,world,options={}){const opts={projection:options.projection==='mercator'?'mercator':'globe',showName:options.showName!==false,showStats:options.showStats!==false,showLegend:options.showLegend!==false,showDxcc:options.showDxcc!==false,showUpdated:options.showUpdated!==false},pixels=makeRaster(),home=payload?.settings?.home||{lat:20,lon:0};if(opts.projection==='mercator'){drawWorldMercator(pixels,world);drawPathsMercator(pixels,{...payload,settings:{...payload.settings,home}});}else{drawGlobeBackground(pixels);const centerLat=Number(home.lat)||0,centerLon=Number(home.lon)||0;drawWorldGlobe(pixels,world,centerLat,centerLon);drawPathsGlobe(pixels,{...payload,settings:{...payload.settings,home}},centerLat,centerLon);}drawFooter(pixels,payload,opts);return encodePng(pixels);}
 
-function rotatePoint(lat, lon, centerLat, centerLon) {
-  const la = lat * Math.PI / 180, lo = lon * Math.PI / 180;
-  let x = Math.cos(la) * Math.sin(lo), y = Math.sin(la), z = Math.cos(la) * Math.cos(lo);
-  const ry = -centerLon * Math.PI / 180, cy = Math.cos(ry), sy = Math.sin(ry);
-  const x1 = x * cy + z * sy, z1 = -x * sy + z * cy;
-  const rx = centerLat * Math.PI / 180 * .72, cx = Math.cos(rx), sx = Math.sin(rx);
-  return { x: x1, y: y * cx - z1 * sx, z: y * sx + z1 * cx };
-}
-
-function project(lat, lon, centerLat, centerLon) {
-  const p = rotatePoint(lat, lon, centerLat, centerLon);
-  return { x: CX + p.x * RADIUS, y: CY - p.y * RADIUS, z: p.z };
-}
-
-function greatCircle(a, b, t) {
-  const vector = p => { const la = p.lat * Math.PI / 180, lo = p.lon * Math.PI / 180; return [Math.cos(la) * Math.sin(lo), Math.sin(la), Math.cos(la) * Math.cos(lo)]; };
-  const u = vector(a), v = vector(b), dot = Math.max(-1, Math.min(1, u[0] * v[0] + u[1] * v[1] + u[2] * v[2]));
-  const omega = Math.acos(dot), sinOmega = Math.sin(omega);
-  let q = u;
-  if (sinOmega >= 1e-6) {
-    const s0 = Math.sin((1 - t) * omega) / sinOmega, s1 = Math.sin(t * omega) / sinOmega;
-    q = [u[0] * s0 + v[0] * s1, u[1] * s0 + v[1] * s1, u[2] * s0 + v[2] * s1];
-  }
-  return { lat: Math.asin(q[1]) * 180 / Math.PI, lon: Math.atan2(q[0], q[2]) * 180 / Math.PI };
-}
-
-function hslToRgb(h, s = .78, l = .64) {
-  h = ((h % 360) + 360) % 360 / 360;
-  const hue = (p, q, t) => { if (t < 0) t++; if (t > 1) t--; if (t < 1 / 6) return p + (q - p) * 6 * t; if (t < 1 / 2) return q; if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6; return p; };
-  const q = l < .5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
-  return [clampByte(hue(p, q, h + 1 / 3) * 255), clampByte(hue(p, q, h) * 255), clampByte(hue(p, q, h - 1 / 3) * 255)];
-}
-
-function bandColor(band) {
-  const hue = ({ '160M': 280, '80M': 260, '60M': 235, '40M': 210, '30M': 185, '20M': 160, '17M': 130, '15M': 95, '12M': 65, '10M': 35, '6M': 10, '2M': 330 })[String(band || '').toUpperCase()] ?? 200;
-  return hslToRgb(hue);
-}
-
-function drawWorld(pixels, world, centerLat, centerLon) {
-  for (const feature of world.features || []) {
-    const polygons = feature.geometry?.type === 'Polygon' ? [feature.geometry.coordinates] : feature.geometry?.coordinates || [];
-    for (const polygon of polygons) for (const ring of polygon) {
-      let previous = null;
-      for (const coord of ring) {
-        const current = project(coord[1], coord[0], centerLat, centerLon);
-        if (previous && previous.z > 0 && current.z > 0 && Math.hypot(current.x - previous.x, current.y - previous.y) < 80) line(pixels, previous, current, [112, 160, 132], .45, 1);
-        previous = current;
-      }
-    }
-  }
-}
-
-function crc32(buffer) {
-  let crc = 0xffffffff;
-  for (const byte of buffer) { crc ^= byte; for (let k = 0; k < 8; k++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1)); }
-  return (crc ^ 0xffffffff) >>> 0;
-}
-
-function chunk(type, data) {
-  const name = Buffer.from(type), length = Buffer.alloc(4), crc = Buffer.alloc(4);
-  length.writeUInt32BE(data.length); crc.writeUInt32BE(crc32(Buffer.concat([name, data])));
-  return Buffer.concat([length, name, data, crc]);
-}
-
-function encodePng(pixels) {
-  const raw = Buffer.alloc((WIDTH * 4 + 1) * HEIGHT);
-  for (let y = 0; y < HEIGHT; y++) { const offset = y * (WIDTH * 4 + 1); raw[offset] = 0; pixels.copy(raw, offset + 1, y * WIDTH * 4, (y + 1) * WIDTH * 4); }
-  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(WIDTH, 0); ihdr.writeUInt32BE(HEIGHT, 4); ihdr[8] = 8; ihdr[9] = 6;
-  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw, { level: 9 })), chunk('IEND', Buffer.alloc(0))]);
-}
-
-function renderStaticPng(payload, world) {
-  const pixels = makeRaster(), home = payload?.settings?.home || { lat: 20, lon: 0 };
-  const centerLat = Number(home.lat) || 0, centerLon = Number(home.lon) || 0;
-  drawWorld(pixels, world, centerLat, centerLon);
-  for (const q of (payload?.qsos || []).slice(0, 2500)) {
-    let previous = null;
-    for (let n = 0; n <= 20; n++) {
-      const point = greatCircle(home, q, n / 20), current = project(point.lat, point.lon, centerLat, centerLon);
-      if (previous) line(pixels, previous, current, bandColor(q.band), .34, 0);
-      previous = current;
-    }
-    const endpoint = project(q.lat, q.lon, centerLat, centerLon); if (endpoint.z > 0) circle(pixels, endpoint.x, endpoint.y, 2, bandColor(q.band), .9);
-  }
-  const hp = project(home.lat, home.lon, centerLat, centerLon); circle(pixels, hp.x, hp.y, 5, [255, 255, 255], 1); circle(pixels, hp.x, hp.y, 2, [255, 200, 80], 1);
-  return encodePng(pixels);
-}
-
-module.exports = { renderStaticPng, WIDTH, HEIGHT };
+module.exports={renderStaticPng,WIDTH,HEIGHT};
