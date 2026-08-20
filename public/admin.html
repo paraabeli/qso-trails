@@ -89,6 +89,17 @@
         <label>Width<input id="iframeWidth" type="number" min="320" max="2000" value="700"></label>
         <label>Height<input id="iframeHeight" type="number" min="300" max="1400" value="550"></label>
       </div>
+      <label>Visual date range
+        <select id="visualDays">
+          <option value="0">All published QSOs</option>
+          <option value="1">Last 24 hours</option>
+          <option value="7">Last 7 days</option>
+          <option value="30">Last 30 days</option>
+          <option value="365">Last year</option>
+        </select>
+      </label>
+      <small id="visualDaysNote">Date filtering requires “Expose QSO dates publicly”. It never widens the public snapshot.</small>
+      <label class="inline"><input id="visualGrayline" type="checkbox" checked> Show day/night grayline</label>
       <pre id="iframe"></pre>
     </section>
   </div>
