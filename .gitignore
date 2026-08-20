@@ -1,7 +1,5 @@
 node_modules/
 .env
-data/qsos.json
-data/settings.json
-data/wavelog.json
+data/*.json
 *.log
 .DS_Store
