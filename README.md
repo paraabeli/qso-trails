@@ -1,6 +1,6 @@
 # QSO Trails
 
-Self-hosted Wavelog/ADIF QSO path globe with an **admin-controlled, privacy-minimized public iframe**.
+Self-hosted Wavelog/ADIF QSO path globe with **admin-controlled, privacy-minimized interactive and static public views**.
 
 > **Development disclosure:** QSO Trails was designed and implemented entirely with ChatGPT, with project direction, testing, deployment decisions, and release responsibility by paraabeli.
 >
@@ -21,11 +21,12 @@ server-side band/mode filtering + privacy rounding + aggregate statistics
       v
 private /app/data/public-snapshot.json
       |
-      v
-GET /api/public -> public iframe browser
+      +--> GET /api/public      -> interactive browser view
+      |
+      +--> GET /static/qrz.png -> server-rendered static image
 ```
 
-The public globe never receives the Wavelog token or raw private QSO store.
+The public globe and static renderer never receive the Wavelog token or raw private QSO store.
 
 ## Main features
 
@@ -33,6 +34,7 @@ The public globe never receives the Wavelog token or raw private QSO store.
 - ADIF upload fallback
 - Admin-selected public bands and modes
 - Great-circle paths on an interactive globe
+- Server-rendered 640 × 500 static PNG for non-JavaScript profile/embed environments
 - World map data bundled through pinned npm dependencies; no third-party runtime JavaScript/CDN
 - Server-side public record limit and cached sanitized public snapshot
 - 4-character, 6-character, or exact home/remote coordinate privacy levels
@@ -102,6 +104,22 @@ Defaults are conservative: home and remote positions use 4-character grid center
 `maxPaths` is enforced server-side. If 20,000 QSOs match but `maxPaths=2500`, only 2,500 QSO records are sent to a public browser. Aggregate DXCC statistics are calculated **before** that truncation, so the statistics represent the complete server-selected public set rather than only the rendered subset.
 
 The **Publish aggregate DXCC statistics** control can disable DXCC statistics entirely. Even when enabled, per-QSO `DXCC`, `COUNTRY`, and `CONT` values are not included in public QSO records.
+
+## Static picture publish
+
+`/static/qrz.png` is a server-rendered `640 × 500` PNG built from the same sanitized public snapshot as the interactive globe. It does not fetch Wavelog, does not read the private raw QSO store, and cannot widen the current public band/mode selection or coordinate precision.
+
+The image is regenerated in memory when `public-snapshot.json` changes, so it updates automatically after Wavelog sync, ADIF upload, or public settings changes. The response uses ETag and short public cache headers.
+
+For a profile or biography page that accepts normal images but does not permit JavaScript frames, use:
+
+```html
+<a href="https://qso.example.com/embed" target="_blank" rel="noopener">
+  <img src="https://qso.example.com/static/qrz.png" width="640" height="500" alt="QSO Trails map">
+</a>
+```
+
+The Admin page shows a live static preview and generates the same copy-ready snippet using your configured public base URL.
 
 ## Advanced replay and live features
 
@@ -188,11 +206,13 @@ Example:
 <iframe src="https://qso.example.com/embed?days=30&grayline=1&theme=ocean&mode=both&opacity=40&replay=1&loop=1&follow=1&timing=relative" width="640" height="500" style="border:0" loading="lazy"></iframe>
 ```
 
-## QRZ iframe sizing
+## Iframe sizing
 
-Presets are Responsive `100% × 620`, Compact `480 × 420`, QRZ `640 × 500`, Wide `900 × 620`, and Custom width `320–2000` / height `300–1400`. Sizing only changes generated embed HTML and admin preview.
+Presets are Responsive `100% × 620`, Compact `480 × 420`, QRZ-sized `640 × 500`, Wide `900 × 620`, and Custom width `320–2000` / height `300–1400`. Sizing only changes generated interactive embed HTML and admin preview.
 
-The default CSP permits framing by QSO Trails itself and QRZ domains only. To support another site, edit `EMBED_FRAME_ANCESTORS` in `.env`.
+The default CSP permits framing by QSO Trails itself and QRZ domains, but a host site may independently reject or sandbox JavaScript frames. Where an interactive iframe is not accepted, use the static `/static/qrz.png` image instead.
+
+To support another framing site on the QSO Trails side, edit `EMBED_FRAME_ANCESTORS` in `.env`.
 
 ## Restricting admin access
 
@@ -210,7 +230,11 @@ The persistent `qso_data` volume contains `qsos.json`, `settings.json`, `wavelog
 
 ## Dependency/runtime security
 
-Production dependencies are exact-version pinned. Docker installs production dependencies with lifecycle scripts disabled. CI runs syntax checks, `npm audit --omit=dev --audit-level=high`, and validates the Compose file. Dependabot checks npm and Docker updates weekly.
+Production dependencies are exact-version pinned. Docker installs production dependencies with lifecycle scripts disabled. CI runs JavaScript syntax checks, `npm audit --omit=dev --audit-level=high`, Compose validation, a production Docker image build, and a container smoke test against `/embed`, `/api/public`, and `/static/qrz.png`. The static-image smoke check verifies the PNG signature and a non-trivial image size.
+
+GitHub Actions used by CI are pinned to immutable commit SHAs. Dependabot checks npm, Docker, and GitHub Actions updates weekly.
+
+The repository currently generates an npm lockfile transiently in CI rather than committing one. Committing a reviewed lockfile remains an additional reproducibility hardening option for a future release.
 
 ## Updating
 
