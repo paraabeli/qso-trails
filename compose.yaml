@@ -5,10 +5,11 @@ services:
     build:
       context: .
       dockerfile_inline: |
-        FROM node:20-alpine
+        FROM node:24.19.0-alpine3.24
         WORKDIR /app
+        ENV NODE_ENV=production
         COPY package.json ./
-        RUN npm install --omit=dev
+        RUN npm install --omit=dev --ignore-scripts --no-audit --no-fund && npm cache clean --force
         COPY server.js ./
         COPY public ./public
         RUN mkdir -p /app/data && chown -R node:node /app
@@ -17,11 +18,26 @@ services:
         EXPOSE 3000
         CMD ["node", "server.js"]
     restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid,nodev
     environment:
+      NODE_ENV: production
       PORT: "3000"
       ADMIN_USER: "${ADMIN_USER:-admin}"
       ADMIN_PASSWORD: "${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}"
+      CONFIG_ENCRYPTION_KEY: "${CONFIG_ENCRYPTION_KEY:?Set CONFIG_ENCRYPTION_KEY in .env}"
       PUBLIC_BASE_URL: "https://${DOMAIN:?Set DOMAIN in .env}"
+      ADMIN_ALLOWED_IPS: "${ADMIN_ALLOWED_IPS:-}"
+      EMBED_FRAME_ANCESTORS: "${EMBED_FRAME_ANCESTORS:-'self' https://qrz.com https://*.qrz.com}"
+      ALLOW_INSECURE_WAVELOG: "${ALLOW_INSECURE_WAVELOG:-false}"
+      ALLOW_PRIVATE_WAVELOG: "${ALLOW_PRIVATE_WAVELOG:-false}"
     volumes:
       - qso_data:/app/data
     expose:
@@ -32,9 +48,13 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   caddy:
-    image: caddy:2.11-alpine
+    image: caddy:2.11.4-alpine
     restart: unless-stopped
     depends_on:
       app:
@@ -53,6 +73,10 @@ services:
     volumes:
       - caddy_data:/data
       - caddy_config:/config
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   qso_data:
