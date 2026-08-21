@@ -7,7 +7,7 @@
     if(data?.settings?.showStats===false)return '';
     const mode=data?.settings?.embedCount||'both';
     const qso=Number(data?.qsoCount||0).toLocaleString();
-    const lotw=Number(data?.lotwCount||0).toLocaleString();
+    const lotw=Number(data?.lotwCount??data?.qsoCount??0).toLocaleString();
     if(mode==='qso')return `${qso} QSOs`;
     if(mode==='lotw')return `${lotw} LoTW confirmed`;
     return `${qso} QSOs · ${lotw} LoTW confirmed`;
