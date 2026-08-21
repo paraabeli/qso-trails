@@ -1,0 +1,238 @@
+# Deployment Guide
+
+QSO Trails has two explicit Docker Compose deployment modes. Keep them separate; they have different network and secret assumptions.
+
+## Production: `compose.prod.yaml`
+
+Production consists of:
+
+```text
+Internet
+  |
+  | TCP 80 / 443
+  v
+Caddy
+  |
+  | private Docker network, app:3000
+  v
+QSO Trails app
+  |
+  v
+qso_data named volume
+```
+
+The application service has no `ports:` entry in production. Port 3000 is visible only inside the Docker network through `expose`. Caddy is the only service bound to public host ports.
+
+### Create production environment
+
+```bash
+cp .env.production.example .env.production
+```
+
+Replace every placeholder. In particular:
+
+- `DOMAIN` — public DNS name.
+- `ADMIN_PASSWORD` — unique random admin password, at least 16 characters; 20+ recommended.
+- `CONFIG_ENCRYPTION_KEY` — separate random value, at least 32 characters.
+- `ADMIN_ALLOWED_IPS` — required exact trusted IP(s) / IPv4 CIDRs. Prefer VPN/Tailscale addresses.
+- `EMBED_FRAME_ANCESTORS` — sites permitted to embed the public iframe.
+
+The production stack sets `REQUIRE_ADMIN_ALLOWLIST=true`. The application refuses to start if the allowlist is empty.
+
+Generate independent secrets, for example:
+
+```bash
+openssl rand -base64 32
+openssl rand -base64 48
+```
+
+Do not use the same value for the admin password and encryption key.
+
+### Start production
+
+```bash
+docker compose \
+  --env-file .env.production \
+  -f compose.prod.yaml \
+  up -d --build
+```
+
+Inspect the effective configuration before first deployment:
+
+```bash
+docker compose \
+  --env-file .env.production \
+  -f compose.prod.yaml \
+  config
+```
+
+Confirm the `app` service does **not** have a host `ports:` mapping.
+
+### Production updates
+
+```bash
+git pull
+
+docker compose \
+  --env-file .env.production \
+  -f compose.prod.yaml \
+  up -d --build
+```
+
+### Production logs
+
+```bash
+docker compose \
+  --env-file .env.production \
+  -f compose.prod.yaml \
+  logs -f app caddy
+```
+
+Caddy access logs can contain client IP addresses and requested URL paths/query parameters. Treat host/container logs according to your operational privacy policy and keep log retention bounded.
+
+## Development/local: `compose.dev.yaml`
+
+Development intentionally skips Caddy and exposes the application only on the host loopback interface:
+
+```text
+Browser on same machine
+        |
+        | 127.0.0.1:3000 only
+        v
+QSO Trails app
+        |
+        v
+qso_data_dev named volume
+```
+
+Create the local environment:
+
+```bash
+cp .env.development.example .env.development
+```
+
+Start:
+
+```bash
+docker compose \
+  --env-file .env.development \
+  -f compose.dev.yaml \
+  up -d --build
+```
+
+Open:
+
+- `http://localhost:3000/admin`
+- `http://localhost:3000/embed`
+- `http://localhost:3000/static/qrz.png`
+
+The Compose binding is explicitly:
+
+```text
+127.0.0.1:3000:3000
+```
+
+Do not shorten this to `3000:3000`; an unspecified host address can expose the service on LAN/public interfaces.
+
+## Environment-file rules
+
+Runtime files are intentionally untracked:
+
+```text
+.env
+.env.production
+.env.development
+.env.local
+.env.anything-else
+```
+
+`.gitignore` and `.dockerignore` ignore `.env` plus `.env.*`; only `.env.example` and `.env.*.example` templates are allowed in Git/build context.
+
+This prevents a common failure mode where `.env.local` or `.env.production` is accidentally committed or copied into an image.
+
+You should still protect the files on the host, for example:
+
+```bash
+chmod 600 .env.production .env.development
+```
+
+Docker environment variables are not a secret-management system against a compromised/root Docker host. The threat model assumes the Docker host and Docker daemon are trusted. For larger deployments, use an external secret-management mechanism appropriate to the platform.
+
+## Persistent data
+
+Private application state is stored in the app-only named volume. It can contain:
+
+- normalized private QSO records;
+- encrypted Wavelog configuration/token;
+- settings;
+- private LoTW confirmation cache;
+- the current sanitized public snapshot.
+
+Caddy does not mount the QSO data volume.
+
+Do not publish or back up the volume to a public location. Backups should receive the same protection as the original log data.
+
+## Public endpoints
+
+The intended public surface is:
+
+- `/embed`
+- `/api/public`
+- `/api/world`
+- `/static/qrz.png`
+- browser JS/CSS under `/assets`
+
+HTML files in the public source directory are blocked from the generic `/assets` mount; `/admin` and `/embed` are served through their dedicated routes/headers.
+
+`/api/public` and `/static/qrz.png` use `Cache-Control: no-store` in the hardened privacy layer so privacy changes are not intentionally retained in shared HTTP caches.
+
+## Admin endpoints
+
+- `/admin`
+- `/api/admin/*`
+
+Admin requires Basic Auth; mutation requests also require CSRF protection. Production additionally requires the IP/CIDR allowlist.
+
+The supported production proxy topology is currently one Caddy reverse proxy directly in front of the application. If you add Cloudflare, another load balancer, ingress controller, or another proxy hop, review `trust proxy` and `ADMIN_ALLOWED_IPS` behavior before considering the IP restriction reliable.
+
+## Wavelog
+
+Use a Wavelog API v2 token with only:
+
+```text
+qso:read
+confirmation:read
+```
+
+Normal deployments should leave:
+
+```dotenv
+ALLOW_PRIVATE_WAVELOG=false
+ALLOW_INSECURE_WAVELOG=false
+```
+
+Enable those only for intentional private-network/local Wavelog arrangements. HTTPS remains preferred even on private networks.
+
+## Legacy `compose.yaml`
+
+`compose.yaml` remains temporarily for existing installations. It now uses the same hardened Dockerfile and requires the production admin allowlist policy, but uses the traditional `.env` filename.
+
+New installs should choose `compose.prod.yaml` or `compose.dev.yaml` explicitly. The compatibility file may be removed in a future major cleanup after operators have migrated.
+
+## Before exposing a server to the Internet
+
+Confirm all of the following:
+
+- production uses `compose.prod.yaml`;
+- app port 3000 is not published by Docker/firewall/NAT;
+- only ports 80/443 reach Caddy;
+- `.env.production` has unique secrets and is not tracked;
+- `ADMIN_ALLOWED_IPS` resolves to the addresses you actually administer from;
+- Wavelog token has only `qso:read` + `confirmation:read`;
+- `ALLOW_INSECURE_WAVELOG=false` unless explicitly required;
+- `ALLOW_PRIVATE_WAVELOG=false` unless explicitly required;
+- public coordinate precision and optional fields have been reviewed in Admin;
+- `/api/public` contains only information you intend to make public;
+- host/Docker/Caddy are patched and backups/logs are protected.
+
+See `SECURITY.md` and `docs/SECURITY_PRIVACY_HARDENING.md` for the threat model, completed fixes and remaining work.
