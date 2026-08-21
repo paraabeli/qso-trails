@@ -21,7 +21,7 @@ Internal `allQsoCount` / `returnedQsos` accounting is stripped from public JSON.
 
 ### 3. Standalone Dockerfile was weaker than Compose — DONE
 
-The production image uses Node 24.19, production mode, lockfile-only `npm ci --ignore-scripts`, explicit copies and non-root execution. Both privacy and network guards are included in the image.
+The production image uses Node 24.19, production mode, lockfile-only `npm ci --ignore-scripts`, explicit copies and non-root execution. Privacy, network, and privacy-default guards are included in the image.
 
 ### 4. Local development could bind publicly — DONE
 
@@ -47,74 +47,46 @@ HTML documents are rejected from the generic asset path before static serving.
 
 ### 9. Static renderer had no rate limiter — DONE
 
-`/static/qrz.png` has an in-process per-IP limiter. Client-IP correctness now depends on the explicit trusted-proxy policy documented below rather than a fixed hop count.
+`/static/qrz.png` has an in-process per-IP limiter. Client-IP correctness depends on the explicit trusted-proxy policy rather than a fixed hop count.
 
 ### 10. `trust proxy = 1` assumes one trusted reverse proxy — DONE for supported Compose topologies
 
-Implemented in `network-guard.js`:
-
-- intercept the core server's fixed `trust proxy = 1` assignment.
-- production sets `TRUST_PROXY=loopback,uniquelocal`, matching Caddy on the private Docker network.
-- development sets `TRUST_PROXY=false` because the application is reached directly on loopback.
-- a direct public peer is not trusted merely because it supplies `X-Forwarded-For`.
-- tests verify that the old hop-count value is replaced by the selected policy.
-
-Operator note: Cloudflare, Kubernetes ingress, another load balancer, or a changed network topology requires explicit review of `TRUST_PROXY`. Never use blanket trust without understanding every possible path to the application.
+`network-guard.js` replaces the core fixed hop-count value with explicit policy. Production uses `TRUST_PROXY=loopback,uniquelocal`; development uses `TRUST_PROXY=false`.
 
 ### 11. Wavelog SSRF DNS rebinding / connection pinning — DONE for application Wavelog API requests
 
-`network-guard.js` now performs a second DNS policy check at the actual fetch boundary and pins the socket to an address from that validated result.
-
-Implemented:
-
-- validate all A/AAAA answers immediately before connection.
-- reject the request when any result is restricted while private Wavelog access is disabled.
-- normalize IPv4-mapped IPv6 before policy checks.
-- use a custom Node HTTP(S) lookup callback returning the validated IP, preventing a second DNS lookup at socket connect time.
-- retain the original hostname for Host/TLS SNI and certificate verification.
-- reject redirects.
-- cap individual Wavelog responses before buffering.
+Wavelog API requests validate all A/AAAA answers immediately before connection, normalize mapped IPv6, reject restricted results by default, pin the socket to a validated address, preserve hostname verification, reject redirects, and cap buffered response size.
 
 See `docs/NETWORK_BOUNDARY_HARDENING.md`.
 
 ### 12. LoTW confirmation pagination needs a total record cap — DONE
 
-Canonical cap:
+Default confirmation safety ceiling is 500,000 records, with the previous successful confirmation cache retained if a refresh exceeds the limit.
 
-```text
-WAVELOG_CONFIRMATION_MAX_RECORDS=500000
-```
+### 13. Aggregate DXCC should be privacy-opt-in by default — DONE
 
-At the normal 1,000 records/page, pages 1–500 are allowed and page 501 is rejected. The LoTW feature retains its previous successful confirmation cache when a refresh fails.
+`showDxccStats` is now interpreted as enabled only when explicitly stored as `true`.
 
-A separate response-size safety limit is also set:
+- brand-new installs therefore start with aggregate DXCC publication disabled;
+- existing installs with explicit `true` keep it enabled;
+- the final public snapshot independently clears `stats.dxcc` unless the stored permission is true.
 
-```text
-WAVELOG_MAX_RESPONSE_BYTES=16777216
-```
+### 14. Station label/public home location privacy semantics — DONE
 
-### 13. Aggregate DXCC should be privacy-opt-in by default — PARTIAL
+Added `publishStationName`, default off.
 
-The privacy guard only retains DXCC aggregates when stored settings explicitly enable `showDxccStats`.
+- Admin has a dedicated **Publish station / callsign label publicly** permission.
+- `settings.stationName` is omitted from the public snapshot unless that permission is true.
+- presentation-only `name=0` remains distinct from the server privacy permission.
+- the rounded public home position remains governed separately because a public path map requires a public start position.
 
-Remaining work:
+See `docs/PRIVACY_DEFAULTS_UI_SAFETY.md`.
 
-- change the core/default UI default from enabled to disabled for brand-new installations.
-- preserve/document existing installations' explicit preferences.
+### 15. DOM construction from QSO-derived values — DONE with compatibility guard
 
-### 14. Station label/public home location privacy semantics — TODO
+`public/dom-safety.js` runs before Admin/embed application code and narrows `HTMLSelectElement.innerHTML` to inert option-only construction. Dynamic option strings therefore cannot become arbitrary executable markup.
 
-A public QSO path map necessarily exposes the configured rounded public home position. The station label should get a separate server-side publication permission.
-
-Planned:
-
-- add `publishStationName`, default off.
-- omit `settings.stationName` from public JSON unless enabled.
-- keep presentation `name=0` distinct from data publication permission.
-
-### 15. DOM construction from QSO-derived values — TODO / low risk
-
-Replace remaining data-derived `innerHTML` option construction with `new Option()` / `textContent`.
+New code should use `new Option()`, `textContent`, and `replaceChildren()` directly; the compatibility guard protects remaining legacy assignments.
 
 ## Supply chain / repository
 
@@ -122,24 +94,31 @@ Replace remaining data-derived `innerHTML` option construction with `new Option(
 
 Recommended repository policy:
 
-- require pull requests before merging.
-- require `security / node-security`.
-- prevent force pushes and branch deletion.
+- require pull requests before merging;
+- require `security / node-security`;
+- prevent force pushes and branch deletion;
 - optionally require signed commits / linear history according to project preference.
 
 ### 17. Privacy regression tests — DONE
 
-CI now covers:
+CI covers:
 
-- syntax checks and production dependency audit.
-- production/development Compose validity and port-binding assertions.
-- production image build/start and public/static smoke tests.
-- private sentinel fields through the final public snapshot guard.
-- fail-open LoTW snapshot rejection.
-- public cache/asset privacy behavior.
-- trusted-proxy replacement behavior.
-- private/reserved/mapped-IP classification.
-- LoTW confirmation-cap boundaries.
+- syntax checks and production dependency audit;
+- production/development Compose validity and port-binding assertions;
+- production image build/start and public/static smoke tests;
+- private sentinel fields through the final public snapshot guard;
+- fail-open LoTW snapshot rejection;
+- public cache/asset privacy behavior;
+- trusted-proxy replacement behavior;
+- private/reserved/mapped-IP classification;
+- LoTW confirmation-cap boundaries;
+- privacy-default persistence;
+- station-name omission by default;
+- DXCC aggregate omission by default.
+
+## Remaining application-code audit items
+
+No unresolved application-code items remain from the August 2026 checklist. Repository branch protection remains an operator/repository-administration task.
 
 ## Deployment files
 
@@ -148,7 +127,5 @@ Canonical files:
 - `compose.prod.yaml` + `.env.production` — Internet-facing production through Caddy.
 - `compose.dev.yaml` + `.env.development` — loopback-only local development/testing.
 - `compose.yaml` + `.env` — hardened compatibility production path for existing installs.
-
-Network policy for the canonical stacks is documented in `docs/NETWORK_BOUNDARY_HARDENING.md`.
 
 Never reuse development credentials in production, never commit actual environment files, and review trusted-proxy settings whenever the reverse-proxy topology changes.
