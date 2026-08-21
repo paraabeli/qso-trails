@@ -54,6 +54,22 @@ fs.writeFile = async function privacyDefaultsWrite(file, data, options) {
 };
 
 express.application.get = function privacyDefaultsGet(route, ...handlers) {
+  if (route === '/admin') {
+    const inject = (req, res, next) => {
+      const originalSendFile = res.sendFile.bind(res);
+      res.sendFile = (file, ...args) => {
+        void originalReadFile(file, 'utf8').then(html => {
+          const marker = '<script src="/assets/admin.js"></script>';
+          const scripts = '<script src="/assets/dom-safety.js"></script><script src="/assets/admin-privacy.js"></script>';
+          const body = html.includes('/assets/admin-privacy.js') ? html : html.replace(marker, `${scripts}${marker}`);
+          res.type('html').send(body);
+        }).catch(next);
+        return res;
+      };
+      next();
+    };
+    return originalGet.call(this, route, inject, ...handlers);
+  }
   if (route === '/api/admin/state') {
     const before = (req, res, next) => {
       const originalJson = res.json.bind(res);
