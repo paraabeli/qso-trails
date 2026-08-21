@@ -4,7 +4,7 @@ This document tracks the August 2026 code/configuration audit of QSO Trails. The
 
 Status values:
 
-- **DONE** — implemented in the current hardening branch.
+- **DONE** — implemented and covered by the current hardening code/tests.
 - **PARTIAL** — meaningful mitigation is implemented, but follow-up remains.
 - **TODO** — not yet implemented.
 - **OPS** — requires repository/host/operator configuration outside application code.
@@ -13,135 +13,85 @@ Status values:
 
 ### 1. LoTW-confirmed-only publishing could fail open — DONE
 
-Risk: if LoTW snapshot transformation failed while the administrator selected `confirmed`, the original all-QSO snapshot could be written.
-
-Implemented:
-
-- `privacy-guard.js` is loaded before the existing publishing layers.
-- Every final atomic `public-snapshot.json` write passes through the privacy guard.
-- If stored settings require `lotwFilter=confirmed`, the guard requires a LoTW-aware v4+ snapshot proving the filter was applied.
-- Unsafe/malformed writes throw before the temp file is written, so the previous known-good snapshot remains intact and the atomic rename never occurs.
-
-Follow-up: add dedicated integration coverage for upstream LoTW transformer failures.
+`privacy-guard.js` validates every final atomic public snapshot write. If stored settings require `lotwFilter=confirmed`, a LoTW-aware v4+ snapshot is required; unsafe writes fail before rename so the previous known-good snapshot remains.
 
 ### 2. Count selection was presentation-only — DONE for public JSON
 
-Risk: `allQsoCount`, `lotwCount`, and `qsoCount` were all available publicly even when the operator selected only one count.
-
-Implemented:
-
-- `allQsoCount` and `returnedQsos` are stripped from public JSON.
-- When stats are disabled, aggregate count fields are removed.
-- QSO-only mode publishes only the QSO count.
-- LoTW-only mode publishes only one generic public count whose value is the LoTW-confirmed count; the embed labels it as LoTW.
-- Both mode publishes QSO count plus LoTW count.
-- Full metrics remain available only in authenticated Admin state.
-
-Note: visitors can still count the QSO records actually delivered to their browser. This is inherent when those paths are public; the guard prevents disclosure of additional totals beyond the delivered records/selected public aggregate.
+Internal `allQsoCount` / `returnedQsos` accounting is stripped from public JSON. Public aggregate counts now follow the selected QSO / LoTW / both mode, while full metrics remain authenticated Admin data.
 
 ### 3. Standalone Dockerfile was weaker than Compose — DONE
 
-Risk: the old Dockerfile used Node 20, `npm install`, broad `COPY . .`, root execution, and did not force production-mode fail-fast checks.
-
-Implemented:
-
-- Node `24.19.0-alpine3.24`.
-- `NODE_ENV=production`.
-- lockfile-only `npm ci --omit=dev --ignore-scripts`.
-- explicit source-file copies only.
-- non-root `USER node`.
-- privacy guard included in the image.
+The production image uses Node 24.19, production mode, lockfile-only `npm ci --ignore-scripts`, explicit copies and non-root execution. Both privacy and network guards are included in the image.
 
 ### 4. Local development could bind publicly — DONE
 
-Risk: a development/POC `3000:3000` mapping can bind on all host interfaces.
-
-Implemented:
-
-- `compose.dev.yaml` maps `127.0.0.1:3000:3000` only.
-- development and production use separate named data volumes.
-- documentation explicitly says not to change the binding to `0.0.0.0` on an untrusted network.
+`compose.dev.yaml` binds only `127.0.0.1:3000:3000` and uses a separate development volume.
 
 ### 5. Local environment files could be committed/baked into images — DONE
 
-Risk: `.env.local`, `.env.production`, `.env.development`, etc. were not all covered by ignore rules.
-
-Implemented:
-
-- `.gitignore` ignores `.env` and `.env.*`, except tracked example templates.
-- `.dockerignore` uses the same rule.
-- tracked `.env.production.example` and `.env.development.example` contain placeholders only.
+Git and Docker ignore runtime `.env` / `.env.*` files while allowing tracked example templates.
 
 ### 6. Production Admin was Internet-reachable by default — DONE for canonical production Compose
 
-Implemented:
-
-- `compose.prod.yaml` sets `REQUIRE_ADMIN_ALLOWLIST=true`.
-- `privacy-guard.js` refuses to start in production when that policy is enabled but `ADMIN_ALLOWED_IPS` is empty.
-- `.env.production.example` makes the allowlist required.
-- legacy `compose.yaml` also enables the requirement.
-
-Operator requirement: choose addresses that remain correct for the actual reverse-proxy topology.
+Production requires an Admin IP/CIDR allowlist and does not publish application port 3000.
 
 ## Medium priority
 
 ### 7. Public privacy changes could remain in shared HTTP caches — DONE
 
-Implemented:
-
-- final `/api/public` responses are forced to `Cache-Control: no-store`.
-- final `/static/qrz.png` responses are forced to `Cache-Control: no-store`.
-
-Operational note: responses cached by an older deployment may remain in third-party caches until their pre-existing TTL expires. Deploying the new headers cannot retroactively erase already cached copies.
+`/api/public` and `/static/qrz.png` are forced to `Cache-Control: no-store` at the final outbound guard.
 
 ### 8. Generic `/assets` mount exposed HTML documents — DONE
 
-Implemented:
-
-- the privacy guard inserts a middleware before `/assets` static serving and returns 404 for `.html` / `.htm` requests.
-- JavaScript/CSS assets remain same-origin and public as intended.
-
-Longer-term cleanup: split browser assets and HTML templates into separate filesystem directories so this does not rely on a routing guard.
+HTML documents are rejected from the generic asset path before static serving.
 
 ### 9. Static renderer had no rate limiter — DONE
 
+`/static/qrz.png` has an in-process per-IP limiter. Client-IP correctness now depends on the explicit trusted-proxy policy documented below rather than a fixed hop count.
+
+### 10. `trust proxy = 1` assumes one trusted reverse proxy — DONE for supported Compose topologies
+
+Implemented in `network-guard.js`:
+
+- intercept the core server's fixed `trust proxy = 1` assignment.
+- production sets `TRUST_PROXY=loopback,uniquelocal`, matching Caddy on the private Docker network.
+- development sets `TRUST_PROXY=false` because the application is reached directly on loopback.
+- a direct public peer is not trusted merely because it supplies `X-Forwarded-For`.
+- tests verify that the old hop-count value is replaced by the selected policy.
+
+Operator note: Cloudflare, Kubernetes ingress, another load balancer, or a changed network topology requires explicit review of `TRUST_PROXY`. Never use blanket trust without understanding every possible path to the application.
+
+### 11. Wavelog SSRF DNS rebinding / connection pinning — DONE for application Wavelog API requests
+
+`network-guard.js` now performs a second DNS policy check at the actual fetch boundary and pins the socket to an address from that validated result.
+
 Implemented:
 
-- `/static/qrz.png` receives a 60 requests/minute/IP in-process limiter before rendering.
-- stale limiter buckets are cleaned up to bound memory use.
+- validate all A/AAAA answers immediately before connection.
+- reject the request when any result is restricted while private Wavelog access is disabled.
+- normalize IPv4-mapped IPv6 before policy checks.
+- use a custom Node HTTP(S) lookup callback returning the validated IP, preventing a second DNS lookup at socket connect time.
+- retain the original hostname for Host/TLS SNI and certificate verification.
+- reject redirects.
+- cap individual Wavelog responses before buffering.
 
-Follow-up: if deployed behind a CDN/reverse proxy chain, verify trusted client-IP handling before relying on this as an abuse-control boundary.
+See `docs/NETWORK_BOUNDARY_HARDENING.md`.
 
-### 10. `trust proxy = 1` assumes one trusted reverse proxy — TODO
+### 12. LoTW confirmation pagination needs a total record cap — DONE
 
-Risk: direct exposure of application port 3000 or adding extra untrusted proxy hops could let forwarded-address handling undermine IP allowlisting/rate limiting.
+Canonical cap:
 
-Planned:
+```text
+WAVELOG_CONFIRMATION_MAX_RECORDS=500000
+```
 
-- document supported proxy topology explicitly.
-- consider a configurable trusted-proxy CIDR/function rather than a fixed hop count.
-- add tests proving spoofed `X-Forwarded-For` does not bypass the production Admin allowlist in the supported Caddy topology.
+At the normal 1,000 records/page, pages 1–500 are allowed and page 501 is rejected. The LoTW feature retains its previous successful confirmation cache when a refresh fails.
 
-Mitigation already present: production Compose does not publish application port 3000.
+A separate response-size safety limit is also set:
 
-### 11. Wavelog SSRF DNS rebinding / connection pinning — TODO
-
-Current protections already include HTTPS-by-default, private/reserved address rejection, URL credential/query/fragment rejection, and redirects disabled.
-
-Remaining work:
-
-- pin the actual outbound connection to an address that passed validation, or use a custom dispatcher/lookup that validates every resolved address at connect time.
-- normalize IPv4-mapped IPv6 and additional special-use ranges explicitly.
-- test DNS rebinding and multi-A/AAAA answers.
-
-### 12. LoTW confirmation pagination needs a total record cap — TODO
-
-Current code caps pages but could theoretically process millions of confirmation records from a malicious/broken upstream.
-
-Planned:
-
-- add a total confirmation-record cap comparable to the QSO safety cap.
-- fail while retaining the previous confirmation cache if the cap is exceeded.
+```text
+WAVELOG_MAX_RESPONSE_BYTES=16777216
+```
 
 ### 13. Aggregate DXCC should be privacy-opt-in by default — PARTIAL
 
@@ -149,58 +99,56 @@ The privacy guard only retains DXCC aggregates when stored settings explicitly e
 
 Remaining work:
 
-- change the core server/default UI default from enabled to disabled for brand-new installations.
-- add migration documentation so existing operators keep their current explicit preference.
+- change the core/default UI default from enabled to disabled for brand-new installations.
+- preserve/document existing installations' explicit preferences.
 
 ### 14. Station label/public home location privacy semantics — TODO
 
-Presentation flags such as `name=0` hide text but do not constitute data-access controls. A public QSO map inherently needs a public start/home position to draw paths, but station labels should have a separate server-side publish permission.
+A public QSO path map necessarily exposes the configured rounded public home position. The station label should get a separate server-side publication permission.
 
 Planned:
 
-- add `publishStationName` server-side privacy toggle, default off.
-- only include `settings.stationName` in `/api/public` when enabled.
-- clarify that a public path map necessarily reveals the configured rounded public home position.
+- add `publishStationName`, default off.
+- omit `settings.stationName` from public JSON unless enabled.
+- keep presentation `name=0` distinct from data publication permission.
 
 ### 15. DOM construction from QSO-derived values — TODO / low risk
 
-Some option lists use `innerHTML` with normalized band values. Current input normalization and CSP make exploitation unlikely, but safer DOM APIs are preferable.
-
-Planned: replace data-derived option construction with `new Option()` / `textContent` throughout Admin and embed code.
+Replace remaining data-derived `innerHTML` option construction with `new Option()` / `textContent`.
 
 ## Supply chain / repository
 
 ### 16. Main branch has no required status checks — OPS
 
-The GitHub repository currently has no branch protection on `main`.
-
 Recommended repository policy:
 
 - require pull requests before merging.
-- require the `security / node-security` check.
+- require `security / node-security`.
 - prevent force pushes and branch deletion.
 - optionally require signed commits / linear history according to project preference.
 
-This is a GitHub repository administration setting, not an application-code setting.
+### 17. Privacy regression tests — DONE
 
-### 17. Privacy regression tests — IN PROGRESS
+CI now covers:
 
-Current CI already checks syntax, production dependency audit, Compose validity, image build/start, `/embed`, `/api/public`, and static PNG rendering.
-
-Planned additions in this hardening branch:
-
-- validate both `compose.prod.yaml` and `compose.dev.yaml`.
-- assert production Compose does not publish port 3000.
-- assert development Compose binds only to `127.0.0.1`.
-- add fixture-based public-snapshot tests containing sentinel private values (source ID, exact/private fields, LoTW timestamp, callsign/date/grid when disabled) and ensure those sentinels cannot survive the final privacy guard.
-- assert a v3/all-QSO snapshot is rejected when settings demand LoTW-confirmed-only publishing.
+- syntax checks and production dependency audit.
+- production/development Compose validity and port-binding assertions.
+- production image build/start and public/static smoke tests.
+- private sentinel fields through the final public snapshot guard.
+- fail-open LoTW snapshot rejection.
+- public cache/asset privacy behavior.
+- trusted-proxy replacement behavior.
+- private/reserved/mapped-IP classification.
+- LoTW confirmation-cap boundaries.
 
 ## Deployment files
 
-Canonical files after this hardening work:
+Canonical files:
 
 - `compose.prod.yaml` + `.env.production` — Internet-facing production through Caddy.
 - `compose.dev.yaml` + `.env.development` — loopback-only local development/testing.
-- `compose.yaml` + `.env` — retained as a hardened compatibility production path for existing installs.
+- `compose.yaml` + `.env` — hardened compatibility production path for existing installs.
 
-Never reuse development credentials in production, and never commit the actual environment files.
+Network policy for the canonical stacks is documented in `docs/NETWORK_BOUNDARY_HARDENING.md`.
+
+Never reuse development credentials in production, never commit actual environment files, and review trusted-proxy settings whenever the reverse-proxy topology changes.
