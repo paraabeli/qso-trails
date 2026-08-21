@@ -11,6 +11,7 @@ RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
 COPY server.js ./
 COPY privacy-guard.js ./
 COPY network-guard.js ./
+COPY privacy-defaults.js ./
 COPY static-render.js ./
 COPY static-publish.js ./
 COPY lotw-feature.js ./
