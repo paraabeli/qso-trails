@@ -8,6 +8,44 @@ const topojson = require('topojson-client');
 const worldAtlas = require('world-atlas/countries-50m.json');
 const { renderStaticPng } = require('./static-render');
 
+// Keep the LoTW snapshot layer aligned with server.js on a brand-new data volume.
+// server.js supplies these values through readJson(..., defaults) when settings.json
+// does not exist; the preload layer also reads settings directly, so expose the same
+// fallback without creating a settings file solely for the feature.
+const settingsFile = path.join(__dirname, 'data', 'settings.json');
+const settingsDefaults = {
+  stationName: 'My Station',
+  homeGrid: 'KP20',
+  bands: [],
+  modes: [],
+  autoRotate: true,
+  showStats: true,
+  showCallsigns: false,
+  showMode: false,
+  showDates: false,
+  showTimes: false,
+  showRemoteGrid: false,
+  showDxccStats: true,
+  homePrecision: 'grid4',
+  remotePrecision: 'grid4',
+  maxPaths: 2500
+};
+const baseReadFile = fs.readFile.bind(fs);
+fs.readFile = async function readFileWithSettingsDefault(file, ...args) {
+  try {
+    return await baseReadFile(file, ...args);
+  } catch (error) {
+    if (error?.code !== 'ENOENT' || path.resolve(String(file)) !== path.resolve(settingsFile)) throw error;
+    const json = JSON.stringify(settingsDefaults);
+    const option = args[0];
+    const encoding = typeof option === 'string' ? option : option?.encoding;
+    return encoding ? json : Buffer.from(json);
+  }
+};
+
+const { install: installLotwFeature } = require('./lotw-feature');
+installLotwFeature();
+
 const snapshotFile = path.join(__dirname, 'data', 'public-snapshot.json');
 const world = topojson.feature(worldAtlas, worldAtlas.objects.countries);
 const cache = new Map();
