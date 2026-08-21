@@ -16,9 +16,13 @@ Keep the host OS, Docker Engine, Caddy image, Node image and application depende
 - Never commit runtime environment files or files from the persistent data volume.
 - Runtime files `.env`, `.env.*`, and private `data/*.json` files are gitignored and dockerignored. Only `*.example` environment templates are tracked.
 
-## Admin exposure
+## Admin exposure and proxy trust
 
 Production deployments require `ADMIN_ALLOWED_IPS` when using `compose.prod.yaml`. Limit it to exact trusted addresses or IPv4 CIDRs, preferably a VPN/Tailscale/admin network. The production privacy guard refuses to start when `REQUIRE_ADMIN_ALLOWLIST=true` and no allowlist is configured.
+
+`network-guard.js` replaces the core server's fixed `trust proxy = 1` setting. Canonical production uses `TRUST_PROXY=loopback,uniquelocal`, matching Caddy on the private Docker network. Canonical development uses `TRUST_PROXY=false` because clients connect directly to the loopback-bound application port.
+
+If another reverse proxy, CDN, Kubernetes ingress, or load balancer is added, review `TRUST_PROXY` before deployment. Do not use blanket proxy trust on an Internet-facing app.
 
 The public `/embed`, `/api/public`, `/api/world`, and `/static/qrz.png` endpoints are intentionally Internet-accessible. `/admin` and `/api/admin/*` require authentication and the configured network policy.
 
@@ -28,13 +32,23 @@ Treat anything returned by `/api/public` or rendered into `/static/qrz.png` as p
 
 The privacy guard runs before the publishing layers and performs a final outbound check. It removes private/internal QSO fields, strips internal accounting counts, limits public count fields to the selected display mode, blocks HTML documents from the generic `/assets` mount, disables shared caching for privacy-sensitive public responses, and rejects a LoTW-confirmed-only snapshot if the LoTW filter was not successfully applied. Rejected snapshot writes leave the previous known-good atomic snapshot in place.
 
-Callsings, mode, dates, times and remote grids remain opt-in public fields. Aggregate DXCC output is only retained by the privacy guard when the stored setting explicitly enables it.
+Callsigns, mode, dates, times and remote grids remain opt-in public fields. Aggregate DXCC output is only retained by the privacy guard when the stored setting explicitly enables it.
 
-## Wavelog SSRF protections
+## Wavelog SSRF and resource protections
 
-HTTPS is required by default. Private/reserved Wavelog destinations and HTTP are blocked unless explicitly enabled with `ALLOW_PRIVATE_WAVELOG=true` and/or `ALLOW_INSECURE_WAVELOG=true`. Redirects are disabled so the Bearer token is not automatically forwarded to another host.
+HTTPS is required by default. Private/reserved Wavelog destinations and HTTP are blocked unless explicitly enabled with `ALLOW_PRIVATE_WAVELOG=true` and/or `ALLOW_INSECURE_WAVELOG=true`.
 
-Further DNS rebinding/connection-pinning hardening remains tracked in `docs/SECURITY_PRIVACY_HARDENING.md`.
+At the final outbound request boundary, `network-guard.js`:
+
+- resolves and validates all current Wavelog A/AAAA addresses immediately before connection;
+- normalizes IPv4-mapped IPv6 addresses before policy checks;
+- rejects mixed/unsafe DNS answers when private access is disabled;
+- pins the socket to a validated address using a custom lookup callback while preserving the original hostname for TLS SNI/certificate verification;
+- rejects redirects so the Bearer token is not forwarded elsewhere;
+- limits individual Wavelog API response bodies to 16 MiB by default;
+- limits LoTW confirmation traversal to 500,000 records by default.
+
+See `docs/NETWORK_BOUNDARY_HARDENING.md` for the exact threat model and configuration.
 
 ## Development
 
