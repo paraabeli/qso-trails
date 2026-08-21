@@ -6,9 +6,9 @@
   "description": "Self-hosted Wavelog/ADIF QSO path map with admin-controlled public iframe view",
   "main": "server.js",
   "scripts": {
-    "start": "node --require ./privacy-guard.js --require ./static-publish.js server.js",
-    "dev": "node --require ./privacy-guard.js --require ./static-publish.js --watch server.js",
-    "check": "node --check server.js && node --check privacy-guard.js && node --check static-render.js && node --check static-publish.js && node --check lotw-feature.js && node --check public/admin.js && node --check public/admin-publish.js && node --check public/admin-lotw.js && node --check public/globe.js && node --check public/embed-extras.js && node --check public/embed-lotw.js && node --check test/privacy-regression.js && node test/privacy-regression.js",
+    "start": "node --require ./privacy-guard.js --require ./network-guard.js --require ./static-publish.js server.js",
+    "dev": "node --require ./privacy-guard.js --require ./network-guard.js --require ./static-publish.js --watch server.js",
+    "check": "node --check server.js && node --check privacy-guard.js && node --check network-guard.js && node --check static-render.js && node --check static-publish.js && node --check lotw-feature.js && node --check public/admin.js && node --check public/admin-publish.js && node --check public/admin-lotw.js && node --check public/globe.js && node --check public/embed-extras.js && node --check public/embed-lotw.js && node --check test/privacy-regression.js && node --check test/network-guard.js && node test/privacy-regression.js && node test/network-guard.js",
     "audit:prod": "npm audit --omit=dev --audit-level=high"
   },
   "engines": {
