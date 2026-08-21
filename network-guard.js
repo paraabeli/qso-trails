@@ -139,6 +139,7 @@ async function pinnedRequest(url, init = {}) {
 }
 
 express.application.set = function guardedSet(name, value) {
+  if (arguments.length === 1) return originalSet.call(this, name);
   if (name === 'trust proxy') {
     if (!TRUST_PROXY || TRUST_PROXY.toLowerCase() === 'false' || TRUST_PROXY === '0') {
       return originalSet.call(this, name, false);
