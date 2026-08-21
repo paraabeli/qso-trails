@@ -1,25 +1,13 @@
 name: qso-trails
 
+# Compatibility production stack. New deployments should prefer compose.prod.yaml
+# with --env-file .env.production. This file remains for existing `docker compose`
+# users and expects the traditional .env file.
 services:
   app:
     build:
       context: .
-      dockerfile_inline: |
-        FROM node:24.19.0-alpine3.24
-        WORKDIR /app
-        ENV NODE_ENV=production
-        COPY package.json package-lock.json ./
-        RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund && npm cache clean --force
-        COPY server.js ./
-        COPY static-render.js ./
-        COPY static-publish.js ./
-        COPY lotw-feature.js ./
-        COPY public ./public
-        RUN mkdir -p /app/data && chown -R node:node /app
-        USER node
-        ENV PORT=3000
-        EXPOSE 3000
-        CMD ["npm", "start"]
+      dockerfile: Dockerfile
     restart: unless-stopped
     init: true
     read_only: true
@@ -41,6 +29,7 @@ services:
       EMBED_FRAME_ANCESTORS: "${EMBED_FRAME_ANCESTORS:-'self' https://qrz.com https://*.qrz.com}"
       ALLOW_INSECURE_WAVELOG: "${ALLOW_INSECURE_WAVELOG:-false}"
       ALLOW_PRIVATE_WAVELOG: "${ALLOW_PRIVATE_WAVELOG:-false}"
+      REQUIRE_ADMIN_ALLOWLIST: "true"
     volumes:
       - qso_data:/app/data
     expose:
