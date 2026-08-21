@@ -7,6 +7,9 @@ const express = require('express');
 const topojson = require('topojson-client');
 const worldAtlas = require('world-atlas/countries-50m.json');
 const { renderStaticPng } = require('./static-render');
+const { install: installLotwFeature } = require('./lotw-feature');
+
+installLotwFeature();
 
 const snapshotFile = path.join(__dirname, 'data', 'public-snapshot.json');
 const world = topojson.feature(worldAtlas, worldAtlas.objects.countries);
