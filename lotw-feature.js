@@ -274,15 +274,33 @@ function installExpressPatches() {
     }
     if (route === '/api/public') {
       const middleware = handlers.slice(0, -1);
+      const originalPublicHandler = handlers.at(-1);
       return originalGet.call(this, route, ...middleware, async (req, res, next) => {
-        try {
+        const sendSnapshot = async () => {
           const body = await originalReadFile(PUBLIC_SNAPSHOT_FILE, 'utf8');
           const etag = `\"${crypto.createHash('sha256').update(body).digest('base64url')}\"`;
           res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
           res.set('ETag', etag);
           if (req.get('if-none-match') === etag) return res.status(304).end();
-          res.type('application/json').send(body);
-        } catch (error) { next(error); }
+          return res.type('application/json').send(body);
+        };
+        try {
+          return await sendSnapshot();
+        } catch (error) {
+          if (error?.code !== 'ENOENT' || typeof originalPublicHandler !== 'function') return next(error);
+          const originalSend = res.send.bind(res);
+          res.send = payload => {
+            void originalReadFile(PUBLIC_SNAPSHOT_FILE, 'utf8').then(body => {
+              const etag = `\"${crypto.createHash('sha256').update(body).digest('base64url')}\"`;
+              res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
+              res.set('ETag', etag);
+              res.type('application/json');
+              originalSend(body);
+            }).catch(next);
+            return res;
+          };
+          return originalPublicHandler(req, res, next);
+        }
       });
     }
     if (route === '/api/admin/state') {
