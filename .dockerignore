@@ -3,5 +3,8 @@ npm-debug.log
 .git
 .github
 .env
+.env.*
+!.env.example
+!.env.*.example
 data/*.json
 *.zip
