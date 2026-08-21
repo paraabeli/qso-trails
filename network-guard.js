@@ -94,8 +94,11 @@ async function pinnedRequest(url, init = {}) {
     const request = transport.request(url, {
       method: init.method || 'GET',
       headers,
-      lookup: (_hostname, options, callback) => callback(null, pinned.address, pinned.family),
-      servername: url.hostname,
+      lookup: (_hostname, options, callback) => {
+        if (options?.all) return callback(null, [{ address: pinned.address, family: pinned.family }]);
+        return callback(null, pinned.address, pinned.family);
+      },
+      servername: url.protocol === 'https:' ? url.hostname : undefined,
       timeout: 30_000
     }, response => {
       if (response.statusCode >= 300 && response.statusCode < 400) {
@@ -158,6 +161,7 @@ module.exports = {
   isRestrictedIp,
   enforceConfirmationCap,
   resolvePinned,
+  pinnedRequest,
   MAX_CONFIRMATION_RECORDS,
   MAX_WAVELOG_RESPONSE_BYTES
 };
