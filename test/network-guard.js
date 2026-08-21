@@ -53,7 +53,7 @@ const server=http.createServer((req,res)=>{res.setHeader('content-type','applica
 server.listen(0,'127.0.0.1',async()=>{
   try {
     const port=server.address().port;
-    const r=await fetch('http://localhost:'+port+'/index.php/api/v2/qso?page=1',{headers:{Authorization:'Bearer test-token'}});
+    const r=await fetch('http://127.0.0.1:'+port+'/index.php/api/v2/qso?page=1',{headers:{Authorization:'Bearer test-token'}});
     const j=await r.json();
     if(!r.ok||j.ok!==true||j.auth!=='Bearer test-token') process.exitCode=2;
   } catch(e) { console.error(e); process.exitCode=3; }
