@@ -22,6 +22,9 @@ services:
       PORT: "3000"
       PUBLIC_BASE_URL: "https://${DOMAIN:?Set DOMAIN in .env.production}"
       REQUIRE_ADMIN_ALLOWLIST: "true"
+      TRUST_PROXY: "loopback,uniquelocal"
+      WAVELOG_CONFIRMATION_MAX_RECORDS: "500000"
+      WAVELOG_MAX_RESPONSE_BYTES: "16777216"
     volumes:
       - qso_data:/app/data
     expose:

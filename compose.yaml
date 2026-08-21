@@ -30,6 +30,9 @@ services:
       ALLOW_INSECURE_WAVELOG: "${ALLOW_INSECURE_WAVELOG:-false}"
       ALLOW_PRIVATE_WAVELOG: "${ALLOW_PRIVATE_WAVELOG:-false}"
       REQUIRE_ADMIN_ALLOWLIST: "true"
+      TRUST_PROXY: "loopback,uniquelocal"
+      WAVELOG_CONFIRMATION_MAX_RECORDS: "500000"
+      WAVELOG_MAX_RESPONSE_BYTES: "16777216"
     volumes:
       - qso_data:/app/data
     expose:

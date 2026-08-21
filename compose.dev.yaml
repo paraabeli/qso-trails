@@ -20,6 +20,9 @@ services:
       NODE_ENV: production
       PORT: "3000"
       PUBLIC_BASE_URL: "http://localhost:3000"
+      TRUST_PROXY: "false"
+      WAVELOG_CONFIRMATION_MAX_RECORDS: "500000"
+      WAVELOG_MAX_RESPONSE_BYTES: "16777216"
     volumes:
       - qso_data_dev:/app/data
     ports:
