@@ -23,6 +23,16 @@ qso_data named volume
 
 The application service has no `ports:` entry in production. Port 3000 is visible only inside the Docker network through `expose`. Caddy is the only service bound to public host ports.
 
+Production also sets:
+
+```text
+TRUST_PROXY=loopback,uniquelocal
+WAVELOG_CONFIRMATION_MAX_RECORDS=500000
+WAVELOG_MAX_RESPONSE_BYTES=16777216
+```
+
+The proxy policy replaces the old fixed one-hop trust assumption. It trusts Caddy when Caddy reaches the application from the private Docker network, but does not trust arbitrary public peers merely because they supply forwarding headers.
+
 ### Create production environment
 
 ```bash
@@ -105,6 +115,8 @@ QSO Trails app
 qso_data_dev named volume
 ```
 
+Development sets `TRUST_PROXY=false`, because the browser talks directly to the application rather than through a reverse proxy.
+
 Create the local environment:
 
 ```bash
@@ -148,8 +160,6 @@ Runtime files are intentionally untracked:
 
 `.gitignore` and `.dockerignore` ignore `.env` plus `.env.*`; only `.env.example` and `.env.*.example` templates are allowed in Git/build context.
 
-This prevents a common failure mode where `.env.local` or `.env.production` is accidentally committed or copied into an image.
-
 You should still protect the files on the host, for example:
 
 ```bash
@@ -160,17 +170,9 @@ Docker environment variables are not a secret-management system against a compro
 
 ## Persistent data
 
-Private application state is stored in the app-only named volume. It can contain:
+Private application state is stored in the app-only named volume. It can contain normalized private QSO records, encrypted Wavelog configuration/token, settings, the private LoTW confirmation cache, and the current sanitized public snapshot.
 
-- normalized private QSO records;
-- encrypted Wavelog configuration/token;
-- settings;
-- private LoTW confirmation cache;
-- the current sanitized public snapshot.
-
-Caddy does not mount the QSO data volume.
-
-Do not publish or back up the volume to a public location. Backups should receive the same protection as the original log data.
+Caddy does not mount the QSO data volume. Do not publish or back up the volume to a public location. Backups should receive the same protection as the original log data.
 
 ## Public endpoints
 
@@ -184,7 +186,7 @@ The intended public surface is:
 
 HTML files in the public source directory are blocked from the generic `/assets` mount; `/admin` and `/embed` are served through their dedicated routes/headers.
 
-`/api/public` and `/static/qrz.png` use `Cache-Control: no-store` in the hardened privacy layer so privacy changes are not intentionally retained in shared HTTP caches.
+`/api/public` and `/static/qrz.png` use `Cache-Control: no-store` in the hardened privacy layer.
 
 ## Admin endpoints
 
@@ -193,7 +195,7 @@ HTML files in the public source directory are blocked from the generic `/assets`
 
 Admin requires Basic Auth; mutation requests also require CSRF protection. Production additionally requires the IP/CIDR allowlist.
 
-The supported production proxy topology is currently one Caddy reverse proxy directly in front of the application. If you add Cloudflare, another load balancer, ingress controller, or another proxy hop, review `trust proxy` and `ADMIN_ALLOWED_IPS` behavior before considering the IP restriction reliable.
+The canonical topology is Caddy directly in front of the app on a private Docker network. `network-guard.js` converts the core fixed proxy setting into the configured `TRUST_PROXY` policy. If you add Cloudflare, another load balancer, ingress controller, or other proxy path, update and test the trust policy before relying on client-IP allowlisting/rate limiting.
 
 ## Wavelog
 
@@ -211,13 +213,19 @@ ALLOW_PRIVATE_WAVELOG=false
 ALLOW_INSECURE_WAVELOG=false
 ```
 
-Enable those only for intentional private-network/local Wavelog arrangements. HTTPS remains preferred even on private networks.
+For each QSO/confirmation API request, the network guard re-resolves the Wavelog hostname, validates all results, normalizes IPv4-mapped IPv6, and pins the actual socket to one validated address. Redirects are rejected and the original hostname is preserved for TLS certificate validation.
+
+Production defaults also limit one Wavelog API response to 16 MiB and LoTW confirmation traversal to 500,000 records. Oversized confirmation refreshes retain the previous successful confirmation cache.
+
+Enable private/insecure Wavelog options only for intentional private-network/local arrangements. HTTPS remains preferred even on private networks.
+
+Detailed behavior is in `docs/NETWORK_BOUNDARY_HARDENING.md`.
 
 ## Legacy `compose.yaml`
 
-`compose.yaml` remains temporarily for existing installations. It now uses the same hardened Dockerfile and requires the production admin allowlist policy, but uses the traditional `.env` filename.
+`compose.yaml` remains temporarily for existing installations. It uses the same hardened Dockerfile, admin allowlist requirement, trusted-proxy policy and Wavelog resource limits, but uses the traditional `.env` filename.
 
-New installs should choose `compose.prod.yaml` or `compose.dev.yaml` explicitly. The compatibility file may be removed in a future major cleanup after operators have migrated.
+New installs should choose `compose.prod.yaml` or `compose.dev.yaml` explicitly.
 
 ## Before exposing a server to the Internet
 
@@ -227,7 +235,8 @@ Confirm all of the following:
 - app port 3000 is not published by Docker/firewall/NAT;
 - only ports 80/443 reach Caddy;
 - `.env.production` has unique secrets and is not tracked;
-- `ADMIN_ALLOWED_IPS` resolves to the addresses you actually administer from;
+- `ADMIN_ALLOWED_IPS` contains the actual administrator source addresses;
+- `TRUST_PROXY` still matches the actual proxy topology;
 - Wavelog token has only `qso:read` + `confirmation:read`;
 - `ALLOW_INSECURE_WAVELOG=false` unless explicitly required;
 - `ALLOW_PRIVATE_WAVELOG=false` unless explicitly required;
@@ -235,4 +244,4 @@ Confirm all of the following:
 - `/api/public` contains only information you intend to make public;
 - host/Docker/Caddy are patched and backups/logs are protected.
 
-See `SECURITY.md` and `docs/SECURITY_PRIVACY_HARDENING.md` for the threat model, completed fixes and remaining work.
+See `SECURITY.md`, `docs/SECURITY_PRIVACY_HARDENING.md`, and `docs/NETWORK_BOUNDARY_HARDENING.md` for the threat model and controls.
