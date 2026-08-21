@@ -9,6 +9,7 @@ RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
     && npm cache clean --force
 
 COPY server.js ./
+COPY privacy-guard.js ./
 COPY static-render.js ./
 COPY static-publish.js ./
 COPY lotw-feature.js ./
