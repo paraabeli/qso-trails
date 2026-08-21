@@ -1,105 +1,37 @@
-# Local POC on macOS with Docker Desktop
+# Local development / POC with Docker
 
-This guide runs QSO Trails locally on a Mac for proof-of-concept testing. It starts only the application container and publishes it on `http://localhost:3000`; Caddy and public HTTPS are intentionally skipped.
+Use the dedicated `compose.dev.yaml` stack for local testing. It deliberately binds the application to `127.0.0.1` only, so Docker does not expose port 3000 on LAN/public interfaces.
 
-> **Local testing only:** the example username/password below are deliberately simple and must not be used for an Internet-facing deployment.
+> This is a local development path. Do not reuse its credentials in production and do not change the host binding to `0.0.0.0` on an untrusted network.
 
-## 1. Prerequisites
-
-Install and start Docker Desktop for Mac. You also need Git and access to the private QSO Trails repository.
-
-Using GitHub CLI is the easiest way to clone a private repository:
+## 1. Create the development environment file
 
 ```bash
-brew install gh
-gh auth login
+cp .env.development.example .env.development
 ```
 
-Choose **GitHub.com**, **HTTPS**, and complete the browser login.
+Edit `.env.development` and replace the example password/encryption key if the machine is shared or long-lived.
 
-Clone QSO Trails:
+Runtime `.env*` files are ignored by both Git and Docker build context rules. Only the tracked `*.example` templates belong in the repository.
+
+## 2. Start the development stack
 
 ```bash
-gh repo clone paraabeli/qso-trails
-cd qso-trails
+docker compose \
+  --env-file .env.development \
+  -f compose.dev.yaml \
+  up -d --build
 ```
 
-## 2. Create the local environment file
-
-Create `.env.local` in the repository root:
-
-```bash
-cat > .env.local <<'EOF'
-DOMAIN=localhost
-
-ADMIN_USER=admin
-ADMIN_PASSWORD=local-poc-password-change-me
-CONFIG_ENCRYPTION_KEY=local-poc-encryption-key-32-characters-minimum
-
-ADMIN_ALLOWED_IPS=
-EMBED_FRAME_ANCESTORS='self'
-
-ALLOW_INSECURE_WAVELOG=false
-ALLOW_PRIVATE_WAVELOG=false
-EOF
-```
-
-Example local Admin login:
+The Compose file maps only:
 
 ```text
-Username: admin
-Password: local-poc-password-change-me
+127.0.0.1:3000 -> container:3000
 ```
 
-These credentials are only an example for localhost testing. For any real deployment, use a long unique password and a separately generated encryption key.
+It does **not** use Caddy or expose ports 80/443.
 
-## 3. Create a Docker Compose local override
-
-The production Compose configuration does not publish application port `3000` directly because Caddy normally handles HTTPS. For a local POC, create `compose.local.yaml`:
-
-```bash
-cat > compose.local.yaml <<'EOF'
-services:
-  app:
-    ports:
-      - "3000:3000"
-    environment:
-      NODE_ENV: production
-      PORT: "3000"
-      ADMIN_USER: "${ADMIN_USER:-admin}"
-      ADMIN_PASSWORD: "${ADMIN_PASSWORD}"
-      CONFIG_ENCRYPTION_KEY: "${CONFIG_ENCRYPTION_KEY}"
-      PUBLIC_BASE_URL: "http://localhost:3000"
-      ADMIN_ALLOWED_IPS: ""
-      EMBED_FRAME_ANCESTORS: "'self'"
-      ALLOW_INSECURE_WAVELOG: "${ALLOW_INSECURE_WAVELOG:-false}"
-      ALLOW_PRIVATE_WAVELOG: "${ALLOW_PRIVATE_WAVELOG:-false}"
-EOF
-```
-
-## 4. Build and start the application
-
-Start only the `app` service:
-
-```bash
-docker compose \
-  --env-file .env.local \
-  -f compose.yaml \
-  -f compose.local.yaml \
-  up -d --build app
-```
-
-Check container status:
-
-```bash
-docker compose \
-  --env-file .env.local \
-  -f compose.yaml \
-  -f compose.local.yaml \
-  ps
-```
-
-## 5. Open QSO Trails
+## 3. Open QSO Trails
 
 Admin:
 
@@ -107,158 +39,109 @@ Admin:
 http://localhost:3000/admin
 ```
 
-Example POC login:
-
-```text
-Username: admin
-Password: local-poc-password-change-me
-```
-
-Interactive public view:
+Public embed:
 
 ```text
 http://localhost:3000/embed
 ```
 
-Static image:
+Static picture:
 
 ```text
 http://localhost:3000/static/qrz.png
 ```
 
-Mercator static image example:
-
-```text
-http://localhost:3000/static/qrz.png?projection=mercator
-```
-
-## 6. View logs
+## 4. View logs
 
 ```bash
 docker compose \
-  --env-file .env.local \
-  -f compose.yaml \
-  -f compose.local.yaml \
+  --env-file .env.development \
+  -f compose.dev.yaml \
   logs -f app
 ```
 
-Press `Ctrl+C` to stop following the logs; the container keeps running.
+## 5. Wavelog during local development
 
-## 7. Connecting to Wavelog
-
-### Public HTTPS Wavelog
-
-If your Wavelog instance is available through a normal public HTTPS hostname, use that URL and leave these values disabled:
+A normal public HTTPS Wavelog works with the safe defaults:
 
 ```dotenv
 ALLOW_PRIVATE_WAVELOG=false
 ALLOW_INSECURE_WAVELOG=false
 ```
 
-### Wavelog running directly on the same Mac
-
-A Docker container's `localhost` points back to the container itself, not to macOS. If Wavelog is running directly on your Mac, use Docker Desktop's host address:
+If Wavelog runs directly on a Docker Desktop host, `localhost` from inside the QSO Trails container refers to the container itself. Docker Desktop commonly provides:
 
 ```text
-http://host.docker.internal:PORT
+host.docker.internal
 ```
 
-For example:
-
-```text
-http://host.docker.internal:8080
-```
-
-For a local HTTP Wavelog POC, change `.env.local` to:
+For an intentionally local/private Wavelog address set:
 
 ```dotenv
 ALLOW_PRIVATE_WAVELOG=true
+```
+
+If that local Wavelog is also plain HTTP rather than HTTPS, local testing additionally requires:
+
+```dotenv
 ALLOW_INSECURE_WAVELOG=true
 ```
 
-Then rebuild/restart the app:
+Do not carry those relaxed values into the production environment unless the network design explicitly requires them and the risk has been reviewed.
 
-```bash
-docker compose \
-  --env-file .env.local \
-  -f compose.yaml \
-  -f compose.local.yaml \
-  up -d --build app
+The Wavelog v2 token should remain read-only with:
+
+```text
+qso:read
+confirmation:read
 ```
 
-`ALLOW_INSECURE_WAVELOG=true` should only be used when intentionally testing an HTTP-only Wavelog endpoint. Keep it `false` for HTTPS.
-
-## 8. Update the local POC
-
-Pull the latest source and rebuild:
-
-```bash
-cd qso-trails
-git pull
-
-docker compose \
-  --env-file .env.local \
-  -f compose.yaml \
-  -f compose.local.yaml \
-  up -d --build app
-```
-
-## 9. Stop the POC without deleting data
+## 6. Stop without deleting data
 
 ```bash
 docker compose \
-  --env-file .env.local \
-  -f compose.yaml \
-  -f compose.local.yaml \
+  --env-file .env.development \
+  -f compose.dev.yaml \
   down
 ```
 
-The `qso_data` Docker volume remains available for the next start.
+The `qso_data_dev` named volume remains.
 
-Do **not** use `docker compose down -v` unless you intentionally want to delete the persistent QSO Trails data volume.
-
-## Troubleshooting
-
-### Port 3000 is already in use
-
-Change the override to another host port, for example:
-
-```yaml
-ports:
-  - "3001:3000"
-```
-
-and change:
-
-```yaml
-PUBLIC_BASE_URL: "http://localhost:3001"
-```
-
-Then open `http://localhost:3001/admin`.
-
-### Admin configuration validation fails
-
-Production mode requires:
-
-- `ADMIN_PASSWORD` to be at least 16 characters and not the default value
-- `CONFIG_ENCRYPTION_KEY` to contain at least 32 characters
-
-The example values in this guide satisfy those minimums but are still intended only for localhost testing.
-
-### Wavelog cannot be reached from Docker
-
-If Wavelog is running on the Mac itself, confirm that QSO Trails uses `host.docker.internal` rather than `localhost`. For a private/LAN address, `ALLOW_PRIVATE_WAVELOG=true` is required. For plain HTTP, `ALLOW_INSECURE_WAVELOG=true` is also required.
-
-### Rebuild after pulling changes
-
-If the browser still appears to show an older version after `git pull`, rebuild the application image:
+To intentionally destroy the local QSO Trails data volume:
 
 ```bash
 docker compose \
-  --env-file .env.local \
-  -f compose.yaml \
-  -f compose.local.yaml \
-  up -d --build app
+  --env-file .env.development \
+  -f compose.dev.yaml \
+  down -v
 ```
 
-A hard browser refresh (`Cmd+Shift+R`) can also clear stale page assets during local testing.
+## 7. Change the local port safely
+
+If port 3000 is occupied, keep the loopback address and change only the host port, for example:
+
+```yaml
+ports:
+  - "127.0.0.1:3001:3000"
+```
+
+Also set `PUBLIC_BASE_URL` in `compose.dev.yaml` to `http://localhost:3001` for that local customization.
+
+Never replace the binding with just `3001:3000` for a privacy-sensitive local test; an unspecified host address may expose it on all host interfaces.
+
+## Production is different
+
+Production uses:
+
+```bash
+cp .env.production.example .env.production
+# Replace every placeholder and configure ADMIN_ALLOWED_IPS.
+docker compose \
+  --env-file .env.production \
+  -f compose.prod.yaml \
+  up -d --build
+```
+
+`compose.prod.yaml` does not publish application port 3000. Only the Caddy service exposes ports 80/443, and the application refuses to start when the required production Admin allowlist is empty.
+
+See `SECURITY.md` and `docs/SECURITY_PRIVACY_HARDENING.md` for the privacy boundary and remaining audit work.

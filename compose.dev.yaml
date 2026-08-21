@@ -1,0 +1,39 @@
+name: qso-trails-dev
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid,nodev
+    env_file:
+      - .env.development
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      PUBLIC_BASE_URL: "http://localhost:3000"
+    volumes:
+      - qso_data_dev:/app/data
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/embed >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+volumes:
+  qso_data_dev:

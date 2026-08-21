@@ -19,41 +19,64 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm run check
       - run: npm run audit:prod
-      - name: Validate Compose
+
+      - name: Prepare CI environment files
+        run: |
+          cp .env.production.example .env.production
+          cp .env.development.example .env.development
+
+      - name: Validate production and development Compose privacy
         env:
           DOMAIN: qso.example.com
+          ADMIN_USER: admin
           ADMIN_PASSWORD: ci-only-long-random-password
           CONFIG_ENCRYPTION_KEY: ci-only-encryption-key-at-least-32-characters-long
-        run: docker compose config --quiet
+          ADMIN_ALLOWED_IPS: 127.0.0.1
+        run: |
+          docker compose --env-file .env.production -f compose.prod.yaml config --format json > compose-prod.json
+          docker compose --env-file .env.development -f compose.dev.yaml config --format json > compose-dev.json
+          docker compose config --quiet
+          node <<'NODE'
+          const prod=require('./compose-prod.json');
+          const dev=require('./compose-dev.json');
+          if ((prod.services?.app?.ports||[]).length) throw new Error('Production app must not publish a host port');
+          const ports=dev.services?.app?.ports||[];
+          if (ports.length!==1 || String(ports[0].host_ip)!=='127.0.0.1' || Number(ports[0].target)!==3000) {
+            throw new Error('Development app must bind only 127.0.0.1:3000');
+          }
+          NODE
+
       - name: Build production app image
-        env:
-          DOMAIN: qso.example.com
-          ADMIN_PASSWORD: ci-only-long-random-password
-          CONFIG_ENCRYPTION_KEY: ci-only-encryption-key-at-least-32-characters-long
-        run: docker compose build app
+        run: docker compose --env-file .env.production -f compose.prod.yaml build app
+
       - name: Start production app for smoke test
-        env:
-          DOMAIN: qso.example.com
-          ADMIN_PASSWORD: ci-only-long-random-password
-          CONFIG_ENCRYPTION_KEY: ci-only-encryption-key-at-least-32-characters-long
-        run: docker compose run -d --name qso-trails-ci -p 3000:3000 app
-      - name: Smoke test production endpoints
+        run: docker compose --env-file .env.production -f compose.prod.yaml run -d --name qso-trails-ci -p 3000:3000 app
+
+      - name: Smoke test production and privacy endpoints
         run: |
           for attempt in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:3000/embed >/dev/null; then break; fi
             if [ "$attempt" = 30 ]; then docker logs qso-trails-ci; exit 1; fi
             sleep 1
           done
-          curl -fsS http://127.0.0.1:3000/api/public -o public.json
-          node -e "const d=require('./public.json'); if(!Array.isArray(d.qsos)||!d.settings) process.exit(1)"
+
+          curl -fsS -D public.headers http://127.0.0.1:3000/api/public -o public.json
+          node -e "const d=require('./public.json'); if(!Array.isArray(d.qsos)||!d.settings||'allQsoCount' in d||'returnedQsos' in d) process.exit(1)"
+          grep -qi '^cache-control: no-store' public.headers
+
+          test "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/assets/admin.html)" = "404"
+
           for theme in retro clean futuristic rough; do
-            curl -fsS "http://127.0.0.1:3000/static/qrz.png?projection=globe&theme=$theme" -o "qrz-$theme-globe.png"
+            curl -fsS -D static.headers "http://127.0.0.1:3000/static/qrz.png?projection=globe&theme=$theme" -o "qrz-$theme-globe.png"
+            grep -qi '^cache-control: no-store' static.headers
             test "$(xxd -p -l 8 qrz-$theme-globe.png)" = "89504e470d0a1a0a"
             test "$(stat -c%s qrz-$theme-globe.png)" -gt 1000
           done
+
           curl -fsS 'http://127.0.0.1:3000/static/qrz.png?projection=mercator&theme=clean&name=0&stats=0&legend=0&dxcc=0&updated=0' -o qrz-mercator.png
           test "$(xxd -p -l 8 qrz-mercator.png)" = "89504e470d0a1a0a"
           test "$(stat -c%s qrz-mercator.png)" -gt 1000
+
       - name: Clean up smoke container
         if: always()
         run: docker rm -f qso-trails-ci >/dev/null 2>&1 || true

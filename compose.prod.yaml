@@ -1,8 +1,5 @@
 name: qso-trails
 
-# Compatibility production stack. New deployments should prefer compose.prod.yaml
-# with --env-file .env.production. This file remains for existing `docker compose`
-# users and expects the traditional .env file.
 services:
   app:
     build:
@@ -18,17 +15,12 @@ services:
     pids_limit: 128
     tmpfs:
       - /tmp:size=16m,noexec,nosuid,nodev
+    env_file:
+      - .env.production
     environment:
       NODE_ENV: production
       PORT: "3000"
-      ADMIN_USER: "${ADMIN_USER:-admin}"
-      ADMIN_PASSWORD: "${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}"
-      CONFIG_ENCRYPTION_KEY: "${CONFIG_ENCRYPTION_KEY:?Set CONFIG_ENCRYPTION_KEY in .env}"
-      PUBLIC_BASE_URL: "https://${DOMAIN:?Set DOMAIN in .env}"
-      ADMIN_ALLOWED_IPS: "${ADMIN_ALLOWED_IPS:-}"
-      EMBED_FRAME_ANCESTORS: "${EMBED_FRAME_ANCESTORS:-'self' https://qrz.com https://*.qrz.com}"
-      ALLOW_INSECURE_WAVELOG: "${ALLOW_INSECURE_WAVELOG:-false}"
-      ALLOW_PRIVATE_WAVELOG: "${ALLOW_PRIVATE_WAVELOG:-false}"
+      PUBLIC_BASE_URL: "https://${DOMAIN:?Set DOMAIN in .env.production}"
       REQUIRE_ADMIN_ALLOWLIST: "true"
     volumes:
       - qso_data:/app/data
@@ -54,7 +46,7 @@ services:
     command:
       - reverse-proxy
       - --from
-      - "${DOMAIN:?Set DOMAIN in .env}"
+      - "${DOMAIN:?Set DOMAIN in .env.production}"
       - --to
       - "app:3000"
       - --access-log

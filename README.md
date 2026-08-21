@@ -1,14 +1,14 @@
 # QSO Trails
 
-Self-hosted Wavelog/ADIF QSO path globe with **admin-controlled, privacy-minimized interactive and static public views**.
+Self-hosted Wavelog/ADIF QSO path mapping with admin-controlled, privacy-minimized interactive and static public views.
 
-> **Development disclosure:** QSO Trails was designed and implemented entirely with ChatGPT, with project direction, testing, deployment decisions, and release responsibility by paraabeli.
+> **Development disclosure:** QSO Trails was designed and implemented entirely with ChatGPT, with project direction, testing, deployment decisions and release responsibility by paraabeli.
 >
 > Copyright © 2026 paraabeli. Released under the MIT License.
 
-## Security-first architecture
+## Privacy model
 
-The browser never reads your raw log files. Wavelog/ADIF data is stored in a private Docker volume under `/app/data`. When you publish settings, the server creates a sanitized `public-snapshot.json` containing only the selected QSOs and fields you explicitly allow. `/api/public` serves that cached snapshot with ETag/cache headers.
+The public browser never receives the raw Wavelog/ADIF store or Wavelog API token.
 
 ```text
 Wavelog / ADIF
@@ -16,68 +16,68 @@ Wavelog / ADIF
       v
 private /app/data/qsos.json
       |
-server-side band/mode filtering + privacy rounding + aggregate statistics
+server-side selection + coordinate rounding + privacy controls
+      |
+LoTW-aware publish transform
+      |
+final fail-closed privacy guard
       |
       v
 private /app/data/public-snapshot.json
       |
-      +--> GET /api/public      -> interactive browser view
-      |
-      +--> GET /static/qrz.png -> server-rendered static image
+      +--> /api/public
+      +--> /embed
+      +--> /static/qrz.png
 ```
 
-The public globe and static renderer never receive the Wavelog token or raw private QSO store.
+The final `privacy-guard.js` is deliberately loaded before the publishing layers. It performs the last outbound snapshot check, strips internal/private fields and unselected counts, and refuses a LoTW-confirmed-only snapshot if the LoTW filter was not successfully applied. A rejected atomic snapshot write leaves the previous known-good snapshot in place rather than broadening disclosure.
 
-## Main features
+Treat anything returned by `/api/public` or rendered in the public map/image as public information. A public path map necessarily reveals the configured **public/rounded** home point and the endpoint positions required to draw the selected paths.
 
-- Wavelog API v2 incremental synchronization (`since_id`)
-- ADIF upload fallback
-- Admin-selected public bands and modes
-- Great-circle paths on an interactive globe
-- Server-rendered 640 × 500 static PNG with 3D-globe or Mercator projection
-- Admin-selectable presentation text for interactive and static published views
-- World map data bundled through pinned npm dependencies; no third-party runtime JavaScript/CDN
-- Server-side public record limit and cached sanitized public snapshot
-- 4-character, 6-character, or exact home/remote coordinate privacy levels
-- Callsign/mode/date/time/grid exposure is opt-in
-- Privacy-safe aggregate DXCC/country/continent statistics
-- Basic Auth, brute-force throttling, CSRF protection and optional admin IP allowlist
-- CSP, HSTS, anti-framing and browser security headers
-- Wavelog SSRF/token-leakage protections and encrypted token storage
-- Non-root/read-only app container, GitHub Actions security audit and Dependabot
-- Selectable iframe sizes with live admin preview
-- Band legend, clickable QSO detail, distance and bearing
-- Visual date filters and live grayline/day-night overlay
-- Night, Ocean, and Light themes
-- Paths, density heatmap, or combined display modes
-- Adjustable trail opacity
-- Advanced chronological replay, live mode, search/focus, presets and explicit WebM save/download flow
+See [SECURITY.md](SECURITY.md) and [the security/privacy hardening checklist](docs/SECURITY_PRIVACY_HARDENING.md).
 
-## Requirements
+## Features
 
-- Docker Engine with Docker Compose supporting `dockerfile_inline` (Compose 2.17+)
-- A DNS hostname pointing to the server
-- TCP ports 80 and 443 reachable by Caddy
-- Wavelog 3.1.0+ for API v2 sync
+- Wavelog API v2 incremental QSO synchronization.
+- LoTW confirmation synchronization and LoTW-confirmed-only map filtering.
+- Embed count modes: QSO count, LoTW-confirmed count, or both.
+- ADIF upload fallback.
+- Server-side band/mode filtering.
+- 4-character, 6-character, or exact public coordinate precision.
+- Callsign, mode, date, time and remote-grid fields are opt-in.
+- Optional aggregate DXCC statistics without publishing per-QSO DXCC/country/continent fields.
+- Interactive great-circle globe, density mode, replay, live polling, search/focus and WebM export.
+- Server-rendered 640×500 globe/Mercator PNG with multiple themes.
+- Basic Auth, brute-force throttling, CSRF protection and production Admin IP/CIDR allowlisting.
+- CSP, HSTS, anti-framing, no-referrer and permissions restrictions.
+- Wavelog HTTPS/SSRF protections and AES-256-GCM token encryption at rest.
+- Non-root/read-only application container with dropped Linux capabilities and `no-new-privileges`.
+- Locked npm dependency installation, Dependabot and GitHub Actions security/privacy regression checks.
 
-## Quick start
+## Docker deployment modes
+
+There are two canonical Compose files.
+
+### Production
+
+Use:
+
+```text
+compose.prod.yaml
+.env.production
+```
+
+The production application has **no host port 3000 mapping**. Only Caddy binds public ports 80/443.
+
+Create the environment:
 
 ```bash
-git clone https://github.com/paraabeli/qso-trails.git
-cd qso-trails
-cp .env.example .env
+cp .env.production.example .env.production
 ```
 
-Edit `.env`:
+Edit every placeholder. `ADMIN_ALLOWED_IPS` is required in production and should contain only trusted administration addresses or IPv4 CIDRs, preferably from a VPN/Tailscale network.
 
-```dotenv
-DOMAIN=qso.example.com
-ADMIN_USER=admin
-ADMIN_PASSWORD=generate-a-long-unique-password
-CONFIG_ENCRYPTION_KEY=generate-at-least-32-random-characters
-```
-
-Generate secrets, for example:
+Generate independent secrets, for example:
 
 ```bash
 openssl rand -base64 32
@@ -87,201 +87,230 @@ openssl rand -base64 48
 Start:
 
 ```bash
-docker compose up -d --build
+docker compose \
+  --env-file .env.production \
+  -f compose.prod.yaml \
+  up -d --build
 ```
 
-Then open `https://qso.example.com/admin` and `https://qso.example.com/embed`.
+Then open:
+
+```text
+https://YOUR_DOMAIN/admin
+https://YOUR_DOMAIN/embed
+```
+
+The production privacy layer refuses to start when `REQUIRE_ADMIN_ALLOWLIST=true` and `ADMIN_ALLOWED_IPS` is empty.
+
+### Development / local POC
+
+Use:
+
+```text
+compose.dev.yaml
+.env.development
+```
+
+Create the environment:
+
+```bash
+cp .env.development.example .env.development
+```
+
+Start:
+
+```bash
+docker compose \
+  --env-file .env.development \
+  -f compose.dev.yaml \
+  up -d --build
+```
+
+The development mapping is explicitly:
+
+```text
+127.0.0.1:3000 -> container:3000
+```
+
+Open `http://localhost:3000/admin` or `http://localhost:3000/embed`.
+
+Do not replace the mapping with an unspecified-host `3000:3000` on an untrusted network.
+
+Full instructions: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and [docs/LOCAL_POC.md](docs/LOCAL_POC.md).
+
+### Legacy compatibility
+
+`compose.yaml` is retained temporarily for existing deployments using `.env`. It now uses the same hardened Dockerfile and production Admin allowlist policy. New installs should explicitly choose `compose.prod.yaml` or `compose.dev.yaml`.
+
+## Environment-file safety
+
+Runtime environment files are not tracked or copied into images:
+
+```text
+.env
+.env.production
+.env.development
+.env.local
+.env.*
+```
+
+`.gitignore` and `.dockerignore` ignore `.env` and `.env.*` while allowing only tracked `*.example` templates.
+
+Environment-file exclusion prevents accidental source/image inclusion, but it does not protect secrets from a compromised Docker host. Treat the Docker host and daemon as privileged infrastructure.
 
 ## Wavelog setup
 
-Create a Wavelog API v2 token with only `qso:read`. In `/admin`, enter the Wavelog base URL and token, save, test, then sync. The token is encrypted in the persistent volume using `CONFIG_ENCRYPTION_KEY`.
+Create a Wavelog API v2 token with only:
 
-By default Wavelog must use HTTPS and resolve to a public address. For an intentional LAN deployment set `ALLOW_PRIVATE_WAVELOG=true`. For intentional HTTP-only Wavelog also set `ALLOW_INSECURE_WAVELOG=true` and understand the Bearer token can traverse the network without TLS.
-
-## Public privacy controls
-
-Defaults are conservative: home and remote positions use 4-character grid centers, band is public for rendering, while callsign, mode, date/time and remote grid are hidden. The Admin page includes **What the Internet sees** and a sample `/api/public` response.
-
-`maxPaths` is enforced server-side. If 20,000 QSOs match but `maxPaths=2500`, only 2,500 QSO records are sent to a public browser. Aggregate DXCC statistics are calculated **before** that truncation, so the statistics represent the complete server-selected public set rather than only the rendered subset.
-
-The **Publish aggregate DXCC statistics** control can disable DXCC statistics entirely. Even when enabled, per-QSO `DXCC`, `COUNTRY`, and `CONT` values are not included in public QSO records.
-
-Presentation switches for the embed and static picture only control what is visibly rendered. They do not grant access to fields that are absent from the sanitized public snapshot, and hiding a presentation element does not change the underlying privacy settings.
-
-## Static picture publish
-
-`/static/qrz.png` is a server-rendered `640 × 500` PNG built from the same sanitized public snapshot as the interactive globe. It does not fetch Wavelog, does not read the private raw QSO store, and cannot widen the current public band/mode selection or coordinate precision.
-
-The Admin page lets you choose either a **3D globe** or **Mercator** projection and independently show or hide the station label, QSO count, band legend, DXCC summary, and generated timestamp. The generated URL includes those presentation choices.
-
-Static image query options are:
-
-- `projection=globe|mercator`
-- `name=0` to hide the station label
-- `stats=0` to hide the QSO count
-- `legend=0` to hide the band legend
-- `dxcc=0` to hide the DXCC summary
-- `updated=0` to hide the generated timestamp
-
-The image is regenerated in memory when `public-snapshot.json` changes, so it updates automatically after Wavelog sync, ADIF upload, or public settings changes. Rendered variants are cached by snapshot state and presentation options, with ETag and short public cache headers.
-
-For a profile or biography page that accepts normal images but does not permit JavaScript frames, use:
-
-```html
-<a href="https://qso.example.com/embed" target="_blank" rel="noopener">
-  <img src="https://qso.example.com/static/qrz.png?projection=globe" width="640" height="500" alt="QSO Trails map">
-</a>
+```text
+qso:read
+confirmation:read
 ```
 
-The Admin page shows a live static preview and generates a copy-ready snippet using your configured public base URL.
+No write/delete permission is required.
 
-## Advanced replay and live features
+In Admin enter the Wavelog base URL/token, save, test, and run **Full resync** once after enabling the LoTW feature. Subsequent QSO synchronization remains incremental while LoTW confirmations use the confirmation endpoint so a later LoTW confirmation is not missed merely because the QSO ID did not change.
 
-Replay remains a presentation layer over the sanitized `/api/public` payload. URL controls never request hidden records or hidden fields.
-
-Advanced replay supports:
-
-- loop replay continuously
-- fade older trails during replay
-- follow the newest replayed QSO by rotating the globe
-- uniform replay or relative timing based on published date/time gaps
-- replay a single public band or all bands
-- pulsing current-QSO endpoint
-- current replay HUD using only public date/time/callsign/band/mode fields
-- timeline scrubber and play/pause controls
-- `0.5×`, `1×`, `2×`, and `4×` automatic replay speeds
-- browser-side WebM recording using `MediaRecorder`
-
-Replay/date features require public QSO dates. Relative timing is most useful when public QSO times are also enabled.
-
-### WebM export
-
-The public embed uses an explicit two-step export flow:
-
-1. Click **Export WebM** to start recording and replay from the beginning.
-2. When replay completes (or after **Stop recording**), click **Download WebM**.
-
-The second user click is intentional because browsers and iframe hosts can block automatic synthetic downloads. Where supported, QSO Trails uses the browser save-file picker. Otherwise it starts a normal user-initiated WebM download. If a third-party iframe host blocks downloads entirely, open the `/embed` URL directly in a browser tab and click **Download WebM** there.
-
-### Live mode
-
-Live mode polls `/api/public` once per minute with `cache: no-store`. It compares the new sanitized snapshot with the previous one and animates/focuses only newly appearing public records. It never calls Wavelog directly and never gains access to the private raw QSO store.
-
-### Callsign focus
-
-The public viewer can search/focus a callsign only when callsigns were explicitly made public. If callsigns are hidden, the feature cannot reconstruct them.
-
-### DXCC progress panel
-
-During normalization, QSO Trails stores ADIF/Wavelog `DXCC`, `COUNTRY`, and `CONT` metadata privately when the source provides it. The public snapshot then publishes only server-calculated aggregate statistics when **Publish aggregate DXCC statistics** is enabled.
-
-The public DXCC drawer includes:
-
-- unique DXCC entities
-- named countries
-- continents
-- QSO count by continent
-- top 10 DXCC entities by QSO count
-- DXCC entity/QSO counts by band
-- DXCC entity/QSO counts by mode when mode exposure is enabled
-- most distant DXCC, calculated using the configured public coordinate precision
-- newest first-worked DXCC when date exposure is enabled
-
-The aggregates are calculated from all server-selected QSOs before `maxPaths` truncation. Per-QSO DXCC/country/continent metadata remains private.
-
-After upgrading from a version that did not store DXCC metadata, run **Full resync** once in the Wavelog section, or re-upload the ADIF file. Existing cached QSO records cannot gain DXCC metadata until they are normalized again.
-
-QSO Trails does not currently claim `worked / total DXCC` percentage because that requires a maintained authoritative current/deleted DXCC entity reference list.
-
-### Saved display presets
-
-The Admin embed generator includes QRZ, 20m DX, FT8 last 30 days and Contest replay presets. A custom **My preset** can also be saved in the administrator's browser via `localStorage`; it does not alter server privacy settings.
-
-## Embed query options
-
-Generated iframe URLs may use:
-
-- `days=1|7|30|365`
-- `grayline=1`
-- `theme=night|ocean|light`
-- `mode=paths|density|both`
-- `opacity=8..90`
-- `replay=0.5|1|2|4`
-- `loop=1`
-- `follow=1`
-- `timing=relative`
-- `fade=0` to disable replay fading
-- `band=<published band>`
-- `live=1`
-- `name=0` to hide the station label
-- `stats=0` to hide the QSO count
-- `legend=0` to hide the band legend
-- `dxcc=0` to hide the DXCC summary/drawer
-- `details=0` to hide click/help text and the interaction hint
-
-The Admin generator exposes the text-visibility choices directly. These flags affect presentation only and cannot reveal a field that was not already published by the server.
-
-Example:
-
-```html
-<iframe src="https://qso.example.com/embed?days=30&grayline=1&theme=ocean&mode=both&opacity=40&replay=1&loop=1&follow=1&timing=relative&details=0" width="640" height="500" style="border:0" loading="lazy"></iframe>
-```
-
-## Iframe sizing
-
-Presets are Responsive `100% × 620`, Compact `480 × 420`, QRZ-sized `640 × 500`, Wide `900 × 620`, and Custom width `320–2000` / height `300–1400`. Sizing only changes generated interactive embed HTML and admin preview.
-
-The default CSP permits framing by QSO Trails itself and QRZ domains, but a host site may independently reject or sandbox JavaScript frames. Where an interactive iframe is not accepted, use the static `/static/qrz.png` image instead.
-
-To support another framing site on the QSO Trails side, edit `EMBED_FRAME_ANCESTORS` in `.env`.
-
-## Restricting admin access
-
-`ADMIN_ALLOWED_IPS` can contain exact addresses or IPv4 CIDRs, for example:
+By default:
 
 ```dotenv
-ADMIN_ALLOWED_IPS=100.64.12.34,192.0.2.0/24
+ALLOW_PRIVATE_WAVELOG=false
+ALLOW_INSECURE_WAVELOG=false
 ```
 
-For a personal station server, putting admin access behind Tailscale/VPN and allowing only that address is recommended.
+Normal Wavelog traffic must therefore use HTTPS and a non-private/non-reserved target. Relax these only for an intentional private/local arrangement and review the network risk.
 
-## Data files
+## LoTW publishing
 
-The persistent `qso_data` volume contains `qsos.json`, `settings.json`, `wavelog.json`, and sanitized `public-snapshot.json`. These files are not served through `/assets`.
+Admin provides:
 
-## Dependency/runtime security
+```text
+QSO map filter
+- all selected QSOs
+- LoTW-confirmed QSOs only
 
-Production dependencies are exact-version pinned and a reviewed npm v3 `package-lock.json` is committed. CI and the production Docker image install from that lockfile with `npm ci`; lifecycle scripts are disabled.
-
-CI runs JavaScript syntax checks, `npm audit --omit=dev --audit-level=high`, Compose validation, a production Docker image build, and a container smoke test against `/embed`, `/api/public`, and both 3D-globe and Mercator `/static/qrz.png` variants. Static-image smoke checks verify the PNG signature and a non-trivial image size.
-
-GitHub Actions used by CI are pinned to immutable commit SHAs. Dependabot checks npm, Docker, and GitHub Actions updates weekly.
-
-## Updating
-
-```bash
-git pull
-docker compose up -d --build
+Embed count
+- QSO count only
+- LoTW confirmed count only
+- both
 ```
 
-After the earlier DXCC metadata upgrade, run **Full resync** once (or re-upload ADIF) if your cached QSO records still do not contain `DXCC`, `COUNTRY`, and `CONT` metadata when available.
+LoTW-confirmed-only filtering occurs before `maxPaths` truncation.
 
-Review dependency/security PRs before merging.
+The final public privacy guard minimizes count data:
 
-## World map source
+- internal `allQsoCount` and `returnedQsos` accounting is not published;
+- QSO-only mode publishes one QSO count;
+- LoTW-only mode publishes one generic count whose value is the LoTW-confirmed count, and the embed labels it as LoTW;
+- both mode publishes the QSO and LoTW counts;
+- when public stats are disabled, aggregate count fields are removed.
 
-Country geometry comes from the npm `world-atlas` package (derived from Natural Earth) and is converted server-side with `topojson-client`. Visitors fetch it from `/api/world`; they do not execute CDN-hosted JavaScript.
+Full internal metrics remain available through authenticated Admin state.
 
-## Development
+## Public QSO fields
 
-QSO Trails was designed and implemented entirely with ChatGPT. The maintainer, paraabeli, provided the project direction, requirements, feature decisions, testing, deployment decisions, security/privacy choices, and release responsibility.
+Base rendering requires:
 
-ChatGPT and OpenAI are not listed as copyright holders or project maintainers. The project copyright notice is `Copyright © 2026 paraabeli`.
+- public-rounded endpoint latitude/longitude;
+- band.
+
+Optional per-QSO fields are controlled server-side:
+
+- callsign;
+- mode;
+- date;
+- time;
+- remote Maidenhead grid.
+
+Private/internal fields such as source type, source ID, LoTW confirmation timestamp and per-QSO DXCC/country/continent are removed by the final guard.
+
+Presentation URL parameters such as `name=0`, `stats=0`, `legend=0` and `details=0` only alter the visible UI. Do not confuse a presentation switch with a server-side privacy permission. Remaining station-label privacy work is explicitly tracked in the hardening checklist.
+
+## DXCC statistics
+
+When explicitly enabled, QSO Trails calculates DXCC aggregates server-side. Per-QSO DXCC/country/continent fields remain private.
+
+The privacy guard removes DXCC aggregate output unless the stored `showDxccStats` setting explicitly enables it. Changing the brand-new-install default from enabled to disabled is tracked as remaining hardening work.
+
+## Public endpoints
+
+Intentionally public:
+
+```text
+/embed
+/api/public
+/api/world
+/static/qrz.png
+/assets/*.js
+/assets/*.css
+```
+
+HTML documents are blocked from the generic `/assets` static mount. `/admin` is served through the authenticated route and `/embed` through its dedicated CSP/frame policy.
+
+Privacy-sensitive `/api/public` and `/static/qrz.png` responses are forced to `Cache-Control: no-store` by the final guard. This prevents the new deployment from intentionally storing these responses in shared caches; it cannot retroactively erase copies cached under an older version's previous TTL.
+
+The static image endpoint also has an in-process per-IP rate limit before rendering.
+
+## Static image
+
+Use:
+
+```text
+https://YOUR_DOMAIN/static/qrz.png
+```
+
+Common options:
+
+```text
+projection=globe|mercator
+theme=retro|clean|futuristic|rough
+name=0
+stats=0
+legend=0
+dxcc=0
+updated=0
+```
+
+The image renderer reads only the sanitized public snapshot; it does not fetch Wavelog or read the raw QSO store.
+
+## Interactive embed
+
+Basic example:
+
+```html
+<iframe
+  src="https://YOUR_DOMAIN/embed"
+  width="100%"
+  height="620"
+  style="border:0"
+  loading="lazy">
+</iframe>
+```
+
+The allowed parent sites are controlled by `EMBED_FRAME_ANCESTORS` and the embed CSP.
+
+The interactive renderer supports visual themes, density, replay, grayline, live polling, band selection, trail opacity, callsign focus (only when callsigns are public), and browser-side WebM export. These features operate only on the sanitized `/api/public` payload.
+
+## Security checks
+
+CI currently runs:
+
+- immutable-SHA GitHub Actions dependencies;
+- `npm ci --ignore-scripts`;
+- JavaScript syntax checks;
+- fixture-based privacy regression tests with sentinel private values;
+- production dependency audit;
+- production/development Compose validation;
+- assertion that production does not publish app port 3000;
+- assertion that development binds app port 3000 only to `127.0.0.1`;
+- production image build/start;
+- `/embed` and `/api/public` smoke tests;
+- verification that `/assets/admin.html` is blocked;
+- `Cache-Control: no-store` checks;
+- static PNG signature/size checks across themes/projections.
+
+Remaining work, including proxy-trust hardening, DNS-rebinding-resistant Wavelog connections, LoTW record caps, server-side station-label publication controls and GitHub branch protection, is tracked in [docs/SECURITY_PRIVACY_HARDENING.md](docs/SECURITY_PRIVACY_HARDENING.md).
 
 ## License
 
-QSO Trails application code is licensed under the MIT License. See [`LICENSE`](LICENSE).
-
-Copyright © 2026 paraabeli.
-
-Third-party packages, container images, and map data retain their own licenses. See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for a summary.
+MIT. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
