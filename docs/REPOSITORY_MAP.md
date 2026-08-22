@@ -14,11 +14,25 @@ The application is intentionally a small CommonJS service without a `src/` build
 - `qso-helpers.js` — shared pure QSO coordinate, timing, distance, and public-field helpers.
 - `package.json` — scripts, Node version, and dependencies.
 - `Dockerfile` — production container build.
-- `compose.prod.yaml` — Internet-facing production stack.
+- `compose.prod.yaml` — standalone Internet-facing production stack with its own Caddy.
+- `compose.external-edge.yaml` — production app-only stack for an existing Cloudflare/Caddy edge and SSH-only admin.
 - `compose.dev.yaml` — loopback-only local stack.
 - `compose.yaml` — compatibility stack for existing deployments.
+- `.env.external-edge.example` — safe template for the shared-edge deployment mode.
 
 Do not move the preload files casually: their paths and order are part of the privacy design.
+
+## Deployment integration files
+
+- `infra/caddy/external-edge.Caddyfile.example` — sanitized `qso.example.com` public route plus loopback-only admin listener example.
+- `scripts/qso-admin-tunnel.sh` — workstation SSH local-forward helper for the private admin listener.
+- `scripts/deploy-external-edge.sh` — clean-tree, fast-forward-only Git deployment helper for `/opt/qso-trails`.
+- `scripts/cloudflare-origin-lock.sh` — Docker `DOCKER-USER` Cloudflare source allowlist scoped to the VPS external ingress interface.
+- `infra/systemd/qso-trails-deploy@.service` / `.timer` — per-user automatic application deployment units.
+- `infra/systemd/qso-trails-cloudflare-origin-lock.service` / `.timer` — daily Cloudflare source-range refresh units.
+- `docs/EXTERNAL_EDGE_DEPLOYMENT.md` — complete generic deployment guide for this mode.
+
+The external-edge firewall helper intentionally scopes port 80/443 rules by ingress interface so Docker/container egress is not mistaken for inbound public web traffic.
 
 ## Browser code
 
@@ -54,4 +68,4 @@ The test files are run by `npm run check`.
 - `.github/workflows/security.yml` — CI/security checks.
 - `.env*.example` — safe configuration templates only.
 
-Never commit actual environment files, tokens, QSO stores, snapshots, or other runtime data.
+Never commit actual environment files, tokens, QSO stores, snapshots, certificates/private keys, or other runtime data.
