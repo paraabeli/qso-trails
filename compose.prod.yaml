@@ -36,6 +36,7 @@ services:
       retries: 5
       start_period: 15s
     logging:
+      driver: local
       options:
         max-size: "10m"
         max-file: "3"
@@ -46,26 +47,33 @@ services:
     depends_on:
       app:
         condition: service_healthy
-    command:
-      - reverse-proxy
-      - --from
-      - "${DOMAIN:?Set DOMAIN in .env.production}"
-      - --to
-      - "app:3000"
-      - --access-log
+    environment:
+      DOMAIN: "${DOMAIN:?Set DOMAIN in .env.production}"
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
     ports:
       - "80:80"
       - "443:443"
       - "443:443/udp"
     volumes:
+      - ./Caddyfile.prod:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+      - caddy_logs:/var/log/qso-trails
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid,nodev
     logging:
+      driver: local
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: "5m"
+        max-file: "2"
 
 volumes:
   qso_data:
   caddy_data:
   caddy_config:
+  caddy_logs:
