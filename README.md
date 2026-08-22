@@ -1,26 +1,36 @@
 # QSO Trails
 
-Self-hosted Wavelog/ADIF QSO path mapping with admin-controlled, privacy-minimized interactive and static public views.
+Self-hosted Wavelog/ADIF QSO path mapping with privacy-minimized interactive embeds and static images.
 
-> **Development disclosure:** QSO Trails was designed and implemented entirely with ChatGPT, with project direction, testing, deployment decisions and release responsibility by paraabeli.
+> QSO Trails was designed and implemented with ChatGPT, with project direction, testing, deployment decisions and release responsibility by paraabeli.
 >
-> Copyright © 2026 paraabeli. Released under the MIT License.
+> Copyright © 2026 paraabeli. MIT licensed.
 
-## Privacy model
+## What it does
 
-The browser never receives the raw Wavelog/ADIF store or the Wavelog API token.
+- Wavelog API v2 QSO synchronization plus LoTW confirmation synchronization.
+- ADIF upload fallback.
+- All-QSO or LoTW-confirmed-only publication.
+- Server-side band/mode selection and 4/6-character or exact coordinate precision.
+- Opt-in callsign, mode, date, time, remote-grid, station-label and DXCC aggregate publication.
+- Interactive path/density/replay/live views.
+- Static 640×500 globe or Mercator PNG.
+- Expanded visual themes plus optional **Real Earth / NASA Blue Marble** mode.
+- Hardened production Docker/Caddy deployment with private app networking and bounded/minimal access logging.
+
+## Privacy boundary
 
 ```text
 Wavelog / ADIF
       |
       v
-private data/qsos.json + settings.json
+private data/qsos.json + settings
       |
-server-side filtering, coordinate rounding, and privacy permissions
+server-side filtering + rounding + privacy permissions
       |
-LoTW-aware transform
+LoTW-aware transformation
       |
-final fail-closed privacy guard
+fail-closed final privacy guard
       |
 private data/public-snapshot.json
       |
@@ -29,126 +39,90 @@ private data/public-snapshot.json
       +--> /static/qrz.png
 ```
 
-The public endpoints and renderers use only the sanitized public snapshot. Public QSO fields, station-label publication, DXCC aggregates, counts, and coordinate precision are controlled server-side.
+The public renderer never receives the raw QSO store or Wavelog token. Treat everything intentionally returned by public endpoints as public information. A public path map necessarily reveals the selected public/rounded home and remote positions required to draw its paths.
 
-Read [ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full runtime flow and privacy invariants.
-
-## Features
-
-- Wavelog API v2 incremental QSO synchronization.
-- LoTW confirmation synchronization and confirmed-only filtering.
-- ADIF upload fallback.
-- Server-side band/mode filtering and coordinate precision controls.
-- Opt-in callsign, mode, date, time, remote-grid, station-label, and DXCC aggregate publication.
-- Interactive globe, density, replay, live polling, search/focus, and WebM export.
-- Server-rendered 640×500 globe/Mercator PNG with multiple themes.
-- Basic Auth, CSRF protection, rate limiting, trusted-proxy controls, and Admin IP/CIDR allowlisting.
-- Wavelog HTTPS/SSRF protections and encrypted token storage.
-- Hardened non-root/read-only Docker deployment.
-
-## Quick start
-
-Requirements: Node.js `>=22.0.0` and npm.
-
-```bash
-npm ci --ignore-scripts
-npm run check
-npm start
-```
-
-For development watch mode:
-
-```bash
-npm run dev
-```
-
-The local server uses port `3000` by default. Docker users should choose one of the explicit Compose modes below.
-
-## Docker deployment
-
-Standalone production with its own Caddy:
+## Production quick start
 
 ```bash
 cp .env.production.example .env.production
-# edit every placeholder and configure ADMIN_ALLOWED_IPS
-docker compose \
-  --env-file .env.production \
-  -f compose.prod.yaml \
-  up -d --build
+# Configure domain, independent secrets, and ADMIN_ALLOWED_IPS.
+docker compose --env-file .env.production -f compose.prod.yaml up -d --build
 ```
 
-External Cloudflare/Caddy edge with SSH-only admin:
+Only Caddy publishes ports 80/443. The app port 3000 remains private to Docker networking.
 
-```bash
-cp .env.external-edge.example .env.external-edge
-# edit secrets, domain, shared Docker network and embed origin
-docker compose \
-  --env-file .env.external-edge \
-  -f compose.external-edge.yaml \
-  up -d --build
-```
-
-The external-edge mode is intended for a VPS whose existing Caddy already owns ports 80/443. QSO Trails joins that proxy's private Docker network, leaves app port 3000 unpublished, blocks public admin routes at the edge, and reaches admin through an SSH tunnel to a loopback-only proxy listener.
-
-Development/local POC:
+For local development:
 
 ```bash
 cp .env.development.example .env.development
-docker compose \
-  --env-file .env.development \
-  -f compose.dev.yaml \
-  up -d --build
+docker compose --env-file .env.development -f compose.dev.yaml up -d --build
 ```
 
-The development stack binds only to `127.0.0.1:3000`. Standalone production exposes the service through its own Caddy; external-edge production reuses an existing edge Caddy and does not publish the application port directly.
+Development binds only `127.0.0.1:3000`.
 
-Full deployment instructions are in [DEPLOYMENT.md](docs/DEPLOYMENT.md), [EXTERNAL_EDGE_DEPLOYMENT.md](docs/EXTERNAL_EDGE_DEPLOYMENT.md), and [LOCAL_POC.md](docs/LOCAL_POC.md).
+For an existing Cloudflare/Caddy edge, use `compose.external-edge.yaml`; the app stays unpublished and the repository includes SSH-admin, deploy, Cloudflare-origin-lock and systemd helpers.
 
-## Wavelog setup
+## Wavelog
 
-Create a Wavelog API v2 token with only:
+Use a read-only API v2 token with exactly the capabilities needed by QSO Trails:
 
 ```text
 qso:read
 confirmation:read
 ```
 
-No write/delete permission is required. Normal Wavelog traffic requires HTTPS and rejects private/reserved destinations unless explicitly configured otherwise.
+Normal deployments keep private-address and insecure-HTTP Wavelog access disabled. Run **Full resync** once after initially enabling LoTW confirmation support.
 
-## Public behavior
+## Themes
 
-Intentionally public endpoints:
+Interactive themes:
 
 ```text
-/embed
-/api/public
-/api/world
-/static/qrz.png
-/assets/*.js
-/assets/*.css
+night · ocean · light · midnight · aurora · amber · mono · ice · earth
 ```
 
-`/admin` is authenticated. Deployments may additionally block admin routes at an upstream edge. Generic `/assets` serving blocks HTML documents. Treat everything returned by a public endpoint or rendered in the public map/image as public information.
+Static themes:
 
-Presentation switches such as `name=0`, `stats=0`, `legend=0`, and `details=0` only change visible presentation. They do not grant permission to publish additional data.
+```text
+retro · clean · futuristic · rough · midnight · aurora · amber · mono · ice · earth
+```
 
-## Development and security
+Examples:
 
-- Development commands and the completion gate: [DEVELOPMENT.md](docs/DEVELOPMENT.md).
-- File and directory responsibilities: [REPOSITORY_MAP.md](docs/REPOSITORY_MAP.md).
-- Security policy and deployment assumptions: [SECURITY.md](SECURITY.md).
-- Hardening checklist: [SECURITY_PRIVACY_HARDENING.md](docs/SECURITY_PRIVACY_HARDENING.md).
-- Network boundary details: [NETWORK_BOUNDARY_HARDENING.md](docs/NETWORK_BOUNDARY_HARDENING.md).
-- LoTW feature details: [LOTW_CONFIRMATIONS.md](docs/LOTW_CONFIRMATIONS.md).
-- CI/security workflow: [.github/workflows/security.yml](.github/workflows/security.yml).
+```text
+/embed?theme=aurora
+/embed?theme=earth
+/static/qrz.png?projection=globe&theme=midnight
+/static/qrz.png?projection=mercator&theme=earth
+```
 
-Run the complete local gate with:
+`earth` uses a locally cached NASA Visible Earth Blue Marble texture. Visitor browsers request only QSO Trails; they do not contact NASA or another map provider directly.
+
+## Logging
+
+Standalone production Caddy access logs are deliberately minimal and have a **30-day maximum retention**. The policy masks client IPs, removes query strings and request/response headers, skips asset noise, rolls daily/at a size limit, and expires logs after 720 hours. Runtime container stdout/stderr is separately size-bounded.
+
+## Documentation
+
+The repository now has a deliberately small canonical documentation set:
+
+- [Operations](docs/OPERATIONS.md) — prod/dev/external-edge deployment, Wavelog/LoTW, themes/Earth imagery, logging, backups and upgrades.
+- [Architecture](docs/ARCHITECTURE.md) — runtime composition, data flow and privacy invariants.
+- [Development](docs/DEVELOPMENT.md) — repository layout, tests and change checklist.
+- [Security](SECURITY.md) — threat model, deployment assumptions and vulnerability reporting.
+
+CI/security workflow: [.github/workflows/security.yml](.github/workflows/security.yml).
+
+## Development gate
 
 ```bash
+npm ci --ignore-scripts
 npm run check
 npm run audit:prod
 ```
 
+CI additionally validates Compose/Caddy configuration, production image startup, privacy endpoints and static themes.
+
 ## License
 
-MIT. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+MIT. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). NASA Blue Marble imagery remains subject to NASA's media/identity usage guidance; see `docs/OPERATIONS.md`.
