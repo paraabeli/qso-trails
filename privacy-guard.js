@@ -135,11 +135,13 @@ express.application.get = function privacyGet(route, ...handlers) {
 
 express.application.use = function privacyUse(route, ...handlers) {
   if (route === '/assets') {
-    const blockHtml = (req, res, next) => {
-      if (/\.html?$/i.test(req.path || '')) return res.status(404).send('Not found.');
+    const protectAssets = (req, res, next) => {
+      const assetPath = String(req.path || '');
+      if (/\.html?$/i.test(assetPath)) return res.status(404).send('Not found.');
+      if (/^\/admin(?:-[a-z0-9-]+)?\.js$/i.test(assetPath)) return noStore(req, res, next);
       next();
     };
-    return originalUse.call(this, route, blockHtml, ...handlers);
+    return originalUse.call(this, route, protectAssets, ...handlers);
   }
   return originalUse.call(this, route, ...handlers);
 };
