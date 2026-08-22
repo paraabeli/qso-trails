@@ -6,7 +6,7 @@ const path = require('path');
 
 const DATA = path.join(__dirname, '..', 'data');
 const SETTINGS = path.join(DATA, 'settings.json');
-const { hardenPublicSnapshot } = require('../privacy-guard');
+const { hardenPublicSnapshot, staticRateLimit } = require('../privacy-guard');
 
 async function writeSettings(overrides = {}) {
   await fs.mkdir(DATA, { recursive: true });
@@ -66,11 +66,32 @@ async function hardened(payload) {
   return JSON.parse(await hardenPublicSnapshot(JSON.stringify(payload)));
 }
 
+function runStaticRateLimit(req) {
+  const result = { statusCode: 200, nextCalled: false, body: '' };
+  const res = {
+    set() { return res; },
+    status(code) { result.statusCode = code; return res; },
+    send(body) { result.body = body; return res; }
+  };
+  staticRateLimit(req, res, () => { result.nextCalled = true; });
+  return result;
+}
+
 (async () => {
   let previous = null;
   try { previous = await fs.readFile(SETTINGS); } catch (error) { if (error.code !== 'ENOENT') throw error; }
 
   try {
+    const limiterIp = '198.51.100.77';
+    for (let i = 0; i < 60; i++) {
+      const req = { ip: limiterIp, socket: { remoteAddress: limiterIp } };
+      assert.equal(runStaticRateLimit(req).nextCalled, true, `static request ${i + 1} should be allowed`);
+      assert.equal(runStaticRateLimit(req).nextCalled, true, 'fallthrough handler must not charge the same request twice');
+    }
+    const blocked = runStaticRateLimit({ ip: limiterIp, socket: { remoteAddress: limiterIp } });
+    assert.equal(blocked.nextCalled, false);
+    assert.equal(blocked.statusCode, 429, 'the 61st logical static request should be throttled');
+
     await writeSettings({ embedCount: 'qso' });
     let out = await hardened(fixture());
     const serialized = JSON.stringify(out);
