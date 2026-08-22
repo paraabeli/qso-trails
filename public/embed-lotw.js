@@ -12,7 +12,8 @@
       const r=await fetch('/api/public',{cache:'no-store'});if(!r.ok)return;
       const data=await r.json();
       if(visuallyFiltered){
-        dispatchEvent(new CustomEvent('qso-trails:public-settings',{detail:data?.settings||{}}));
+        const publicCount=Number(data?.qsoCount);
+        dispatchEvent(new CustomEvent('qso-trails:public-settings',{detail:{settings:data?.settings||{},qsoCount:Number.isFinite(publicCount)&&publicCount>=0?publicCount:null}}));
         return;
       }
       desired=label(data);if(el.textContent!==desired)el.textContent=desired;
