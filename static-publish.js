@@ -7,6 +7,7 @@ const express = require('express');
 const topojson = require('topojson-client');
 const worldAtlas = require('world-atlas/countries-50m.json');
 const { renderStaticPng } = require('./static-render');
+const { exactFile } = require('./safe-files');
 
 // Keep the LoTW snapshot layer aligned with server.js on a brand-new data volume.
 // server.js supplies these values through readJson(..., defaults) when settings.json
@@ -35,7 +36,7 @@ fs.readFile = async function readFileWithSettingsDefault(file, ...args) {
   try {
     return await baseReadFile(file, ...args);
   } catch (error) {
-    if (error?.code !== 'ENOENT' || path.resolve(String(file)) !== path.resolve(settingsFile)) throw error;
+    if (error?.code !== 'ENOENT' || !exactFile(file, settingsFile)) throw error;
     const json = JSON.stringify(settingsDefaults);
     const option = args[0];
     const encoding = typeof option === 'string' ? option : option?.encoding;
@@ -79,30 +80,35 @@ async function staticImage(options) {
   const existing = cache.get(key);
   if (existing && existing.mtimeMs === stat.mtimeMs && existing.size === stat.size) return existing;
   const snapshot = JSON.parse(await fs.readFile(snapshotFile, 'utf8'));
-  const body = renderStaticPng(snapshot, world, options);
-  const image = {
-    body,
+  const png = renderStaticPng(snapshot, world, options);
+  const value = {
+    body: png,
+    etag: `"${crypto.createHash('sha256').update(png).digest('base64url')}"`,
     mtimeMs: stat.mtimeMs,
-    size: stat.size,
-    etag: `"${crypto.createHash('sha256').update(body).digest('base64url')}"`
+    size: stat.size
   };
-  cache.set(key, image);
+  cache.set(key, value);
   if (cache.size > 64) cache.delete(cache.keys().next().value);
-  return image;
+  return value;
 }
 
-const originalListen = express.application.listen;
-express.application.listen = function patchedListen(...args) {
-  this.get('/static/qrz.png', async (req, res, next) => {
-    try {
-      const image = await staticImage(imageOptions(req.query || {}));
-      res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
-      res.set('ETag', image.etag);
-      if (req.get('if-none-match') === image.etag) return res.status(304).end();
-      res.type('image/png').send(image.body);
-    } catch (error) {
-      next(error);
-    }
-  });
-  return originalListen.apply(this, args);
+const originalGet = express.application.get;
+express.application.get = function staticPublishGet(route, ...handlers) {
+  if (route === '/static/qrz.png') {
+    return originalGet.call(this, route, async (req, res, next) => {
+      try {
+        const rendered = await staticImage(imageOptions(req.query || {}));
+        res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
+        res.set('ETag', rendered.etag);
+        if (req.get('if-none-match') === rendered.etag) return res.status(304).end();
+        res.type('image/png').send(rendered.body);
+      } catch (error) {
+        if (error?.code === 'ENOENT') return res.status(503).type('text/plain').send('Static map is not available yet.');
+        next(error);
+      }
+    });
+  }
+  return originalGet.call(this, route, ...handlers);
 };
+
+module.exports = { imageOptions };
