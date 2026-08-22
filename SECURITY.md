@@ -1,78 +1,64 @@
-# Security
+# QSO Trails security
 
-## Supported deployment
+## Supported boundaries
 
-For Internet-facing deployments use `compose.prod.yaml` behind the included Caddy reverse proxy. The application container is not published directly on a host port. `compose.dev.yaml` is for local development/testing only and binds port 3000 to `127.0.0.1`.
+For standalone Internet production use `compose.prod.yaml`: only Caddy publishes ports 80/443 and the application port remains private to Docker networking. `compose.dev.yaml` is local-only and binds `127.0.0.1:3000`. `compose.external-edge.yaml` is for an existing trusted edge proxy and keeps app port 3000 unpublished.
 
-The legacy `compose.yaml` remains as a production-compatible migration path, but new installations should use the explicit production/development files.
-
-Keep the host OS, Docker Engine, Caddy image, Node image and application dependencies updated.
+Keep the host OS, Docker Engine, Caddy/Node images and dependencies patched.
 
 ## Secrets
 
-- Use a unique `ADMIN_PASSWORD` of at least 16 characters; 20+ random characters is recommended.
-- Use a separate random `CONFIG_ENCRYPTION_KEY` of at least 32 characters and back it up securely. Changing it prevents decryption of the stored Wavelog token.
-- Create a Wavelog API v2 token with only `qso:read` and `confirmation:read` permissions.
-- Never commit runtime environment files or files from the persistent data volume.
-- Runtime files `.env`, `.env.*`, and private `data/*.json` files are gitignored and dockerignored. Only `*.example` environment templates are tracked.
+- Use a unique random `ADMIN_PASSWORD` (20+ characters recommended).
+- Use a separate random `CONFIG_ENCRYPTION_KEY` of at least 32 characters and back it up securely.
+- Wavelog needs only `qso:read` and `confirmation:read`.
+- Never commit runtime `.env*`, private data-volume contents, certificates or keys.
+
+The Wavelog token is encrypted at rest with AES-256-GCM. Environment files are excluded from Git and the Docker build context, but the threat model assumes the Docker host/daemon is trusted.
 
 ## Admin exposure and proxy trust
 
-Production deployments require `ADMIN_ALLOWED_IPS` when using `compose.prod.yaml`. Limit it to exact trusted addresses or IPv4 CIDRs, preferably a VPN/Tailscale/admin network. The production privacy guard refuses to start when `REQUIRE_ADMIN_ALLOWLIST=true` and no allowlist is configured.
+Standalone production requires `ADMIN_ALLOWED_IPS`; the app refuses to start under the production policy when it is empty. Canonical production uses `TRUST_PROXY=loopback,uniquelocal`; local development uses `TRUST_PROXY=false`.
 
-`network-guard.js` replaces the core server's fixed `trust proxy = 1` setting. Canonical production uses `TRUST_PROXY=loopback,uniquelocal`, matching Caddy on the private Docker network. Canonical development uses `TRUST_PROXY=false` because clients connect directly to the loopback-bound application port.
-
-If another reverse proxy, CDN, Kubernetes ingress, or load balancer is added, review `TRUST_PROXY` before deployment. Do not use blanket proxy trust on an Internet-facing app.
-
-The public `/embed`, `/api/public`, `/api/world`, and `/static/qrz.png` endpoints are intentionally Internet-accessible. `/admin` and `/api/admin/*` require authentication and the configured network policy.
+If Cloudflare, another load balancer, ingress controller or proxy hop is added, explicitly re-evaluate client-IP trust before relying on Admin allowlisting or per-IP rate limits. External-edge deployments should block public Admin routes at the edge and use a loopback/SSH-only Admin path.
 
 ## Public data model
 
-Treat anything returned by `/api/public` or rendered into `/static/qrz.png` as permanently public once served. QSO Trails defaults to approximate positions and keeps raw Wavelog/ADIF records in the private data volume.
+Treat `/api/public`, `/embed`, `/static/qrz.png`, and any same-origin public theme assets as public. The raw QSO store and Wavelog credentials remain private.
 
-The privacy guard runs before the publishing layers and performs a final outbound check. It removes private/internal QSO fields, strips internal accounting counts, limits public count fields to the selected display mode, blocks HTML documents from the generic `/assets` mount, disables shared caching for privacy-sensitive public responses, and rejects a LoTW-confirmed-only snapshot if the LoTW filter was not successfully applied. Rejected snapshot writes leave the previous known-good atomic snapshot in place.
+The fail-closed privacy layer strips internal identifiers/source data, unselected optional QSO fields, LoTW timestamps and private DXCC data. Station-name and DXCC aggregates are opt-in. A LoTW-confirmed-only policy must be proven by the LoTW-aware snapshot transformer or the new snapshot write is rejected, preserving the previous known-good snapshot.
 
-Callsigns, mode, dates, times and remote grids remain opt-in public fields. Aggregate DXCC output is only retained by the privacy guard when the stored setting explicitly enables it.
+A public path map inherently exposes the configured public/rounded home and remote coordinates necessary to draw published paths.
 
-## Wavelog SSRF and resource protections
+## Wavelog SSRF/resource protections
 
-HTTPS is required by default. Private/reserved Wavelog destinations and HTTP are blocked unless explicitly enabled with `ALLOW_PRIVATE_WAVELOG=true` and/or `ALLOW_INSECURE_WAVELOG=true`.
+Normal Wavelog access requires HTTPS and rejects private/reserved destinations. The network guard validates all current A/AAAA answers immediately before connection, normalizes IPv4-mapped IPv6, rejects unsafe/mixed answers when private access is disabled, pins the socket to a validated address while preserving the hostname for TLS, rejects redirects, limits individual response bodies, and caps LoTW confirmation traversal.
 
-At the final outbound request boundary, `network-guard.js`:
+Relax `ALLOW_PRIVATE_WAVELOG` or `ALLOW_INSECURE_WAVELOG` only for a deliberate private/local deployment.
 
-- resolves and validates all current Wavelog A/AAAA addresses immediately before connection;
-- normalizes IPv4-mapped IPv6 addresses before policy checks;
-- rejects mixed/unsafe DNS answers when private access is disabled;
-- pins the socket to a validated address using a custom lookup callback while preserving the original hostname for TLS SNI/certificate verification;
-- rejects redirects so the Bearer token is not forwarded elsewhere;
-- limits individual Wavelog API response bodies to 16 MiB by default;
-- limits LoTW confirmation traversal to 500,000 records by default.
+## Real Earth imagery
 
-See `docs/NETWORK_BOUNDARY_HARDENING.md` for the exact threat model and configuration.
+The optional `earth` theme uses a fixed NASA Visible Earth Blue Marble PNG. QSO Trails fetches it **server-side**, with a short timeout, redirect rejection, download/pixel limits and PNG validation, then stores a reduced local cache in the private app data volume. Visitor browsers request only the same QSO Trails origin; they do not contact NASA directly. If the source/cache is unavailable, the map falls back to vector rendering.
 
-## Development
+## Minimal traffic logging
 
-Use:
+Standalone production Caddy access logging is intentionally minimized in `Caddyfile.prod`:
 
-```bash
-cp .env.development.example .env.development
-docker compose --env-file .env.development -f compose.dev.yaml up --build
-```
+- maximum retention: 30 days (`720h`), with at most 30 rolled files;
+- daily/size-based rotation;
+- masked client IPs;
+- query strings removed;
+- request/response headers removed;
+- static asset noise skipped;
+- access-log files mode `0600` in a dedicated Caddy-only volume.
 
-The development container is reachable only on `http://127.0.0.1:3000` / `http://localhost:3000`. Do not change the host binding to `0.0.0.0` on an untrusted network.
+Container stdout/stderr uses Docker's bounded `local` driver and is not intended as permanent web analytics. External-edge operators must apply an equivalent privacy/retention policy to their existing edge proxy.
 
-## Production
+## Browser hardening
 
-Use:
-
-```bash
-cp .env.production.example .env.production
-# Edit every placeholder, especially ADMIN_ALLOWED_IPS.
-docker compose --env-file .env.production -f compose.prod.yaml up -d --build
-```
-
-Do not publish application port 3000 from the production stack. Only Caddy should expose ports 80/443.
+The application sets CSP, anti-framing rules appropriate to Admin/embed, HSTS on HTTPS, no-referrer and permissions restrictions. Admin mutations require CSRF protection. Dynamic select-option construction is constrained to inert option data.
 
 ## Reporting
 
-Please report vulnerabilities privately to the repository owner rather than opening a public issue with exploit details.
+Report vulnerabilities privately to the repository owner. Do not open a public issue containing exploit details, secrets, private QSO data, or credentials.
+
+Operational configuration is documented in `docs/OPERATIONS.md`; runtime/privacy architecture is in `docs/ARCHITECTURE.md`.

@@ -4,6 +4,7 @@ node_modules/
 !.env.example
 !.env.*.example
 data/*.json
+data/*.png
 *.log
 .DS_Store
 *.zip

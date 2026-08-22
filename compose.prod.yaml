@@ -1,22 +1,16 @@
 name: qso-trails
-
 services:
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: {context: ., dockerfile: Dockerfile}
     restart: unless-stopped
     init: true
     read_only: true
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     pids_limit: 128
     tmpfs:
       - /tmp:size=16m,noexec,nosuid,nodev
-    env_file:
-      - .env.production
+    env_file: [.env.production]
     environment:
       NODE_ENV: production
       PORT: "3000"
@@ -25,10 +19,8 @@ services:
       TRUST_PROXY: "loopback,uniquelocal"
       WAVELOG_CONFIRMATION_MAX_RECORDS: "500000"
       WAVELOG_MAX_RESPONSE_BYTES: "16777216"
-    volumes:
-      - qso_data:/app/data
-    expose:
-      - "3000"
+    volumes: [qso_data:/app/data]
+    expose: ["3000"]
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/embed >/dev/null || exit 1"]
       interval: 30s
@@ -36,36 +28,33 @@ services:
       retries: 5
       start_period: 15s
     logging:
-      options:
-        max-size: "10m"
-        max-file: "3"
-
+      driver: local
+      options: {max-size: "10m", max-file: "3"}
   caddy:
     image: caddy:2.11.4-alpine
     restart: unless-stopped
     depends_on:
-      app:
-        condition: service_healthy
-    command:
-      - reverse-proxy
-      - --from
-      - "${DOMAIN:?Set DOMAIN in .env.production}"
-      - --to
-      - "app:3000"
-      - --access-log
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
+      app: {condition: service_healthy}
+    environment:
+      DOMAIN: "${DOMAIN:?Set DOMAIN in .env.production}"
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+    ports: ["80:80", "443:443", "443:443/udp"]
     volumes:
+      - ./Caddyfile.prod:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+      - caddy_logs:/var/log/qso-trails
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid,nodev
     logging:
-      options:
-        max-size: "10m"
-        max-file: "3"
-
+      driver: local
+      options: {max-size: "5m", max-file: "2"}
 volumes:
   qso_data:
   caddy_data:
   caddy_config:
+  caddy_logs:
