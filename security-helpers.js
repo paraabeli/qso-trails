@@ -2,7 +2,11 @@
 
 const crypto = require('crypto');
 
-const SAFE_COMPARE_BYTES = 4096;
+// Node's default maximum HTTP header size is 16 KiB. Padding comparisons to the
+// same fixed size therefore supports any Basic Auth credential that can arrive
+// through a default Node HTTP server without making comparison time depend on
+// the configured credential length.
+const SAFE_COMPARE_BYTES = 16 * 1024;
 
 function safeEqual(a, b) {
   const left = Buffer.from(String(a), 'utf8');
