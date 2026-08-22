@@ -45,6 +45,7 @@ jobs:
           if (!prod.services?.caddy?.volumes?.some(v=>String(v.target||'').includes('/var/log/qso-trails'))) throw new Error('Caddy log volume missing');
           NODE
           grep -q 'roll_keep_for 720h' Caddyfile.prod
+          grep -Fq 'request>uri regexp [?].*$ ""' Caddyfile.prod
           grep -q 'request>headers delete' Caddyfile.prod
           grep -q 'resp_headers delete' Caddyfile.prod
 
@@ -76,6 +77,13 @@ jobs:
           node -e "const d=require('./public.json'); if(!Array.isArray(d.qsos)||!d.settings||'allQsoCount' in d||'returnedQsos' in d) process.exit(1)"
           grep -qi '^cache-control: no-store' public.headers
           test "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/assets/admin.html)" = "404"
+
+          docker exec qso-trails-ci grep -Fq 'admin.js?v=20260823-1' /app/public/admin.html
+          docker exec qso-trails-ci grep -Fq "['midnight','Midnight']" /app/public/admin-publish.js
+          curl -fsS -D admin-js.headers 'http://127.0.0.1:3000/assets/admin.js?v=20260823-1' -o /dev/null
+          curl -fsS -D admin-publish.headers 'http://127.0.0.1:3000/assets/admin-publish.js?v=20260823-1' -o /dev/null
+          grep -qi '^cache-control: no-store' admin-js.headers
+          grep -qi '^cache-control: no-store' admin-publish.headers
 
           docker exec qso-trails-ci node -e "const fs=require('fs'),{encodePng}=require('/app/png-codec');const w=16,h=8,p=Buffer.alloc(w*h*4);for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=(y*w+x)*4;p[i]=20+x*8;p[i+1]=70+y*15;p[i+2]=130+x*4;p[i+3]=255}fs.writeFileSync('/app/data/earth-blue-marble.png',encodePng(w,h,p))"
           curl -fsS http://127.0.0.1:3000/assets/earth-blue-marble.png -o earth.png
