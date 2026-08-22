@@ -3,6 +3,7 @@
 const fs = require('fs/promises');
 const path = require('path');
 const express = require('express');
+const { exactOrAtomicTemp } = require('./safe-files');
 
 const DATA = path.join(__dirname, 'data');
 const SETTINGS_FILE = path.join(DATA, 'settings.json');
@@ -18,11 +19,6 @@ const ADMIN_ALLOWED_IPS = String(process.env.ADMIN_ALLOWED_IPS || '').trim();
 
 if (NODE_ENV === 'production' && REQUIRE_ADMIN_ALLOWLIST && !ADMIN_ALLOWED_IPS) {
   throw new Error('Production privacy policy requires ADMIN_ALLOWED_IPS to be configured.');
-}
-
-function isAtomicTarget(target, file) {
-  const exact = path.resolve(file);
-  return target === exact || target.startsWith(`${exact}.`);
 }
 
 async function readSettings() {
@@ -56,17 +52,12 @@ async function hardenPublicSnapshot(serialized) {
   const lotwFilter = settings.lotwFilter === 'confirmed' ? 'confirmed' : 'all';
   const embedCount = ['qso', 'lotw', 'both'].includes(settings.embedCount) ? settings.embedCount : 'both';
 
-  // A LoTW-confirmed-only policy must only be published by the LoTW-aware v4+
-  // transformer. If that transformer fails, reject the write so the previous
-  // known-good atomic snapshot remains in place.
   if (lotwFilter === 'confirmed' && (Number(snapshot.version) < 4 || snapshot.settings.lotwFilter !== 'confirmed')) {
     throw new Error('Refusing fail-open snapshot: LoTW-confirmed-only policy was not applied.');
   }
 
   snapshot.qsos = snapshot.qsos.map(q => hardenQso(q, settings));
 
-  // Internal accounting stays in authenticated Admin state. Public JSON only
-  // retains the count(s) explicitly selected for publication.
   const actualQsoCount = Number(snapshot.qsoCount || 0);
   const lotwCount = Number(snapshot.lotwCount || 0);
   delete snapshot.allQsoCount;
@@ -76,8 +67,6 @@ async function hardenPublicSnapshot(serialized) {
 
   if (snapshot.settings.showStats === true) {
     if (embedCount === 'lotw') {
-      // qsoCount is the generic static-render count. In LoTW-only mode it is
-      // intentionally the published LoTW count, not the total QSO count.
       snapshot.qsoCount = lotwCount;
     } else {
       snapshot.qsoCount = actualQsoCount;
@@ -85,9 +74,6 @@ async function hardenPublicSnapshot(serialized) {
     }
   }
 
-  // Do not expose internal filter/configuration detail that public renderers do
-  // not need. embedCount remains because the embed needs to label the selected
-  // public count correctly.
   snapshot.settings.embedCount = embedCount;
   delete snapshot.settings.lotwFilter;
   delete snapshot.settings.maxPaths;
@@ -97,12 +83,8 @@ async function hardenPublicSnapshot(serialized) {
   return JSON.stringify(snapshot, null, 2);
 }
 
-// Install before static-publish/lotw-feature. Their final atomic snapshot write
-// flows through this wrapper. Any privacy-guard error aborts the temp-file write
-// and therefore prevents the rename over the previous known-good snapshot.
 fs.writeFile = async function privacyCheckedWriteFile(file, data, options) {
-  const target = path.resolve(String(file));
-  if (isAtomicTarget(target, PUBLIC_SNAPSHOT_FILE) && typeof data === 'string') {
+  if (exactOrAtomicTemp(file, PUBLIC_SNAPSHOT_FILE) && typeof data === 'string') {
     data = await hardenPublicSnapshot(data);
   }
   return originalWriteFile(file, data, options);
