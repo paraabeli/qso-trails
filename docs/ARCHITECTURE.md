@@ -1,77 +1,70 @@
 # QSO Trails architecture
 
-This document is the short map of the runtime and its privacy boundaries. The detailed security decisions remain in `SECURITY.md` and `SECURITY_PRIVACY_HARDENING.md`.
-
 ## Runtime composition
 
-The npm startup scripts intentionally preload the protection and publishing layers in this order:
+Startup preloads intentionally apply in this order:
 
 ```text
 privacy-guard.js
 network-guard.js
 privacy-defaults.js
 static-publish.js
+static-theme-pack.js
 server.js
 ```
 
-`static-publish.js` loads the LoTW feature layer as part of the publishing setup. These files are kept at the repository root because the startup command and Docker image refer to them directly.
+`static-publish.js` installs the LoTW feature layer. `static-theme-pack.js` adds extra static themes and imports the bounded Earth-texture service; it does not widen the public snapshot.
 
 ## Data flow
 
 ```text
-Wavelog API / ADIF upload
-          |
-          v
-private data/qsos.json + data/settings.json
-          |
-          v
-server-side normalization, filtering, coordinate rounding
-          |
-          v
+Wavelog API / ADIF
+       |
+       v
+private data/qsos.json + settings
+       |
+normalization / band-mode selection / coordinate rounding
+       |
 LoTW-aware snapshot transform
-          |
-          v
-final privacy guard and atomic write
-          |
-          v
+       |
+fail-closed privacy guard + atomic write
+       |
 private data/public-snapshot.json
-          |
-          +--> /api/public
-          +--> /embed
-          +--> /static/qrz.png
+       |
+       +--> /api/public
+       +--> /embed
+       +--> /static/qrz.png
 ```
 
-The public renderers consume the sanitized snapshot. They do not need the raw QSO store or the Wavelog token.
+Public renderers consume only the sanitized snapshot. Raw QSOs and Wavelog credentials remain server-side.
 
-## Main areas
+## Main modules
 
-- `server.js` — Express application, imports, settings, synchronization, normalization, snapshot creation, and routes.
-- `network-guard.js` — Wavelog HTTPS, DNS/IP, redirect, response-size, confirmation-cap, and trusted-proxy protections.
-- `privacy-defaults.js` — privacy-safe defaults for persisted settings and snapshot metadata.
-- `lotw-feature.js` — LoTW confirmation state, filtering, metrics, and snapshot integration.
-- `privacy-guard.js` — final public snapshot sanitization, fail-closed LoTW validation, no-store enforcement, and static-image rate limiting.
-- `static-publish.js` — sanitized snapshot to PNG rendering and bounded image caching.
-- `static-render.js` — pure PNG/map rendering functions.
-- `public/` — browser-side admin and embed code; it receives only public/admin responses from the server.
-- `test/` — Node-based regression tests for privacy, network, and default behavior.
-- `data/` — runtime/private state. Do not commit real data or secrets.
-- `docs/` — deployment, security, feature, and development documentation.
+- `server.js` — Express routes, settings, Wavelog/ADIF import and base snapshot logic.
+- `qso-helpers.js` — pure shared QSO helpers.
+- `network-guard.js` — trusted-proxy and Wavelog network/SSRF/resource controls.
+- `privacy-defaults.js` — opt-in station-name/DXCC privacy defaults.
+- `lotw-feature.js` — LoTW confirmation state/filtering/count integration.
+- `privacy-guard.js` — final public sanitization, fail-closed checks, no-store and static rate limiting.
+- `static-publish.js` / `static-render.js` — core static image publication/rendering.
+- `static-theme-pack.js` — expanded static themes and local Earth-texture blending.
+- `earth-texture.js` / `png-codec.js` — bounded NASA image fetch/cache/PNG handling.
+- `public/theme-pack.js` / `public/admin-theme-pack.js` — extra embed/Admin theme UI.
+- `public/` — browser code; no direct access to private data/Wavelog credentials.
+- `test/` — privacy, network, helper, default and PNG regression tests.
+
+## Earth imagery boundary
+
+The optional Earth theme performs one server-side fetch to a fixed NASA Visible Earth source when no valid local cache exists. The response is time/size/pixel bounded, redirects are rejected, PNG data is validated/downsampled, and the result is stored privately. Browsers receive the cached image from the QSO Trails origin only.
 
 ## Privacy invariants
 
-1. The browser never receives the raw QSO store or Wavelog API token.
-2. Public QSO fields are selected server-side; presentation URL switches are not privacy permissions.
-3. Coordinates are rounded unless exact public coordinates are explicitly selected.
-4. Internal identifiers, source fields, LoTW timestamps, and private DXCC fields are removed before public output.
-5. A LoTW-confirmed-only snapshot must be produced by the LoTW-aware path or the write is rejected.
-6. A rejected snapshot write must not replace the previous known-good snapshot.
-7. `/api/public` and `/static/qrz.png` remain no-store endpoints through the final guard.
+1. Browser code never receives the raw QSO store or Wavelog token.
+2. Public fields are selected server-side; URL presentation flags are not permissions.
+3. Internal IDs/source fields/LoTW timestamps/private DXCC fields are stripped.
+4. LoTW-confirmed-only policy fails closed and cannot broaden to all QSOs on transform failure.
+5. Rejected snapshot writes preserve the previous known-good atomic snapshot.
+6. `/api/public` and `/static/qrz.png` remain `no-store`.
+7. Themes may change presentation/background only; they do not widen public data.
 
-## Safe change boundaries
-
-- Documentation and tests can be changed without changing runtime behavior.
-- Pure helper extraction is reasonable when inputs, outputs, and serialization stay unchanged.
-- Keep the preload order unchanged unless the whole startup and privacy test path is being redesigned.
-- Treat public payload changes, settings defaults, route registration, filesystem wrappers, and network guards as security-sensitive changes.
-
-For commands and the completion gate, read `DEVELOPMENT.md`. For the file-by-file map, read `REPOSITORY_MAP.md`.
+Operational topology/logging is in `OPERATIONS.md`; security policy is in root `SECURITY.md`; change/test guidance is in `DEVELOPMENT.md`.
