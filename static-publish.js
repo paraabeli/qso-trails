@@ -92,23 +92,24 @@ async function staticImage(options) {
   return value;
 }
 
-const originalGet = express.application.get;
-express.application.get = function staticPublishGet(route, ...handlers) {
-  if (route === '/static/qrz.png') {
-    return originalGet.call(this, route, async (req, res, next) => {
-      try {
-        const rendered = await staticImage(imageOptions(req.query || {}));
-        res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
-        res.set('ETag', rendered.etag);
-        if (req.get('if-none-match') === rendered.etag) return res.status(304).end();
-        res.type('image/png').send(rendered.body);
-      } catch (error) {
-        if (error?.code === 'ENOENT') return res.status(503).type('text/plain').send('Static map is not available yet.');
-        next(error);
-      }
-    });
-  }
-  return originalGet.call(this, route, ...handlers);
+const originalListen = express.application.listen;
+express.application.listen = function staticPublishListen(...args) {
+  // Register the base renderer at listen time instead of globally intercepting
+  // app.get(). static-theme-pack.js is loaded after this module, so its expanded
+  // theme route is registered first and can call next() for legacy themes.
+  this.get('/static/qrz.png', async (req, res, next) => {
+    try {
+      const rendered = await staticImage(imageOptions(req.query || {}));
+      res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
+      res.set('ETag', rendered.etag);
+      if (req.get('if-none-match') === rendered.etag) return res.status(304).end();
+      res.type('image/png').send(rendered.body);
+    } catch (error) {
+      if (error?.code === 'ENOENT') return res.status(503).type('text/plain').send('Static map is not available yet.');
+      next(error);
+    }
+  });
+  return originalListen.apply(this, args);
 };
 
 module.exports = { imageOptions };
