@@ -88,11 +88,17 @@ jobs:
             test "$(stat -c%s qrz-$theme-globe.png)" -gt 1000
           done
 
+          retro_hash="$(sha256sum qrz-retro-globe.png | cut -d' ' -f1)"
+          for theme in midnight aurora amber mono ice earth; do
+            test "$(sha256sum "qrz-$theme-globe.png" | cut -d' ' -f1)" != "$retro_hash"
+          done
+
           for theme in clean earth; do
             curl -fsS "http://127.0.0.1:3000/static/qrz.png?projection=mercator&theme=$theme&name=0&stats=0&legend=0&dxcc=0&updated=0" -o "qrz-$theme-mercator.png"
             test "$(xxd -p -l 8 qrz-$theme-mercator.png)" = "89504e470d0a1a0a"
             test "$(stat -c%s qrz-$theme-mercator.png)" -gt 1000
           done
+          test "$(sha256sum qrz-earth-mercator.png | cut -d' ' -f1)" != "$(sha256sum qrz-clean-mercator.png | cut -d' ' -f1)"
 
           curl -fsS 'http://127.0.0.1:3000/embed?theme=earth' | grep -q '/assets/dom-safety.js'
           test "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/assets/theme-pack.js)" = "200"
