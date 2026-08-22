@@ -3,6 +3,7 @@
 const fs = require('fs/promises');
 const path = require('path');
 const express = require('express');
+const { exactOrAtomicTemp } = require('./safe-files');
 
 const DATA = path.join(__dirname, 'data');
 const SETTINGS_FILE = path.join(DATA, 'settings.json');
@@ -21,11 +22,6 @@ function privacySettings(value = {}) {
   };
 }
 
-function atomicTarget(target, file) {
-  const exact = path.resolve(file);
-  return target === exact || target.startsWith(`${exact}.`);
-}
-
 async function storedPrivacySettings() {
   try {
     const parsed = JSON.parse(await originalReadFile(SETTINGS_FILE, 'utf8'));
@@ -37,13 +33,12 @@ async function storedPrivacySettings() {
 }
 
 fs.writeFile = async function privacyDefaultsWrite(file, data, options) {
-  const target = path.resolve(String(file));
-  if (atomicTarget(target, SETTINGS_FILE) && typeof data === 'string') {
+  if (exactOrAtomicTemp(file, SETTINGS_FILE) && typeof data === 'string') {
     const parsed = JSON.parse(data);
     const current = privacySettings(parsed);
     data = JSON.stringify({ ...parsed, ...current, ...(pendingPrivacy || {}) }, null, 2);
     pendingPrivacy = null;
-  } else if (atomicTarget(target, PUBLIC_SNAPSHOT_FILE) && typeof data === 'string') {
+  } else if (exactOrAtomicTemp(file, PUBLIC_SNAPSHOT_FILE) && typeof data === 'string') {
     const parsed = JSON.parse(data);
     const settings = await storedPrivacySettings();
     if (parsed?.settings && settings.publishStationName !== true) delete parsed.settings.stationName;
