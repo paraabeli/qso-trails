@@ -9,6 +9,7 @@ const dns = require('dns/promises');
 const net = require('net');
 const topojson = require('topojson-client');
 const worldAtlas = require('world-atlas/countries-50m.json');
+const { allowedExactFile } = require('./safe-files');
 const { distanceKm, maidenheadToLatLon, positionAtPrecision, publicHome, qsoSortKey, qsoTimestamp, sanitizePublicQso } = require('./qso-helpers');
 
 const app = express();
@@ -29,6 +30,8 @@ const QSO_FILE = path.join(DATA, 'qsos.json');
 const SETTINGS_FILE = path.join(DATA, 'settings.json');
 const WAVELOG_FILE = path.join(DATA, 'wavelog.json');
 const PUBLIC_SNAPSHOT_FILE = path.join(DATA, 'public-snapshot.json');
+const READABLE_JSON_FILES = [QSO_FILE, SETTINGS_FILE, WAVELOG_FILE];
+const WRITABLE_JSON_FILES = [QSO_FILE, SETTINGS_FILE, WAVELOG_FILE, PUBLIC_SNAPSHOT_FILE];
 
 const defaults = {
   stationName: 'My Station',
@@ -83,8 +86,10 @@ function failFastOnUnsafeProductionConfig() {
 }
 
 async function readJson(file, fallback) {
+  const target = allowedExactFile(file, READABLE_JSON_FILES);
+  if (!target) throw new Error('Refusing to read an unexpected application data file.');
   try {
-    return JSON.parse(await fs.readFile(file, 'utf8'));
+    return JSON.parse(await fs.readFile(target, 'utf8'));
   } catch (error) {
     if (error && error.code !== 'ENOENT' && error.name !== 'SyntaxError') throw error;
     return structuredClone(fallback);
@@ -92,10 +97,12 @@ async function readJson(file, fallback) {
 }
 
 async function writeJson(file, value) {
+  const target = allowedExactFile(file, WRITABLE_JSON_FILES);
+  if (!target) throw new Error('Refusing to write an unexpected application data file.');
   await fs.mkdir(DATA, { recursive: true, mode: 0o700 });
-  const tmp = `${file}.${crypto.randomUUID()}.tmp`;
+  const tmp = `${target}.${crypto.randomUUID()}.tmp`;
   await fs.writeFile(tmp, JSON.stringify(value, null, 2), { mode: 0o600 });
-  await fs.rename(tmp, file);
+  await fs.rename(tmp, target);
 }
 
 function fixedHash(value) {

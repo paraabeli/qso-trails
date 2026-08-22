@@ -4,6 +4,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
+const { exactOrAtomicTemp } = require('./safe-files');
 const { distanceKm, maidenheadToLatLon, positionAtPrecision, publicHome, qsoSortKey, qsoTimestamp, sanitizePublicQso } = require('./qso-helpers');
 
 const DATA = path.join(__dirname, 'data');
@@ -302,14 +303,9 @@ function installExpressPatches() {
     return originalPost.call(this, route, ...handlers);
   };
 }
-function atomicTargetMatches(target, file) {
-  const exact = path.resolve(file);
-  return target === exact || target.startsWith(`${exact}.`);
-}
 function installFsPatches() {
   fs.writeFile = async function patchedWriteFile(file, data, options) {
-    const target = path.resolve(String(file));
-    if (atomicTargetMatches(target, QSO_FILE) && typeof data === 'string') {
+    if (exactOrAtomicTemp(file, QSO_FILE) && typeof data === 'string') {
       try {
         const state = await ensureLotwState();
         if (confirmationAvailable) {
@@ -326,10 +322,10 @@ function installFsPatches() {
           }
         }
       } catch (error) { lastConfirmationError = `Could not apply LoTW confirmations: ${error.message || error}`; }
-    } else if (atomicTargetMatches(target, SETTINGS_FILE) && typeof data === 'string' && pendingSettings) {
+    } else if (exactOrAtomicTemp(file, SETTINGS_FILE) && typeof data === 'string' && pendingSettings) {
       try { data = JSON.stringify({ ...JSON.parse(data), ...pendingSettings }, null, 2); }
       finally { pendingSettings = null; }
-    } else if (atomicTargetMatches(target, PUBLIC_SNAPSHOT_FILE) && typeof data === 'string') {
+    } else if (exactOrAtomicTemp(file, PUBLIC_SNAPSHOT_FILE) && typeof data === 'string') {
       try { data = JSON.stringify(await buildSnapshot(JSON.parse(data)), null, 2); }
       catch (error) { lastConfirmationError = `Could not build LoTW-aware public snapshot: ${error.message || error}`; }
     }
