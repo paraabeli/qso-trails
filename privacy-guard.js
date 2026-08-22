@@ -106,7 +106,11 @@ function noStore(req, res, next) {
 }
 
 const staticBuckets = new Map();
+const STATIC_RATE_LIMIT_APPLIED = Symbol('qsoTrailsStaticRateLimitApplied');
 function staticRateLimit(req, res, next) {
+  if (req[STATIC_RATE_LIMIT_APPLIED]) return next();
+  req[STATIC_RATE_LIMIT_APPLIED] = true;
+
   const now = Date.now();
   const ip = String(req.ip || req.socket.remoteAddress || 'unknown');
   let bucket = staticBuckets.get(ip);
@@ -140,4 +144,4 @@ express.application.use = function privacyUse(route, ...handlers) {
   return originalUse.call(this, route, ...handlers);
 };
 
-module.exports = { hardenPublicSnapshot };
+module.exports = { hardenPublicSnapshot, staticRateLimit };
