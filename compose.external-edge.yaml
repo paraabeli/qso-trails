@@ -1,0 +1,55 @@
+name: qso-trails
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid,nodev
+    env_file:
+      - .env.external-edge
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      PUBLIC_BASE_URL: "https://${DOMAIN:?Set DOMAIN in .env.external-edge}"
+      REQUIRE_ADMIN_ALLOWLIST: "true"
+      ADMIN_ALLOWED_IPS: "127.0.0.1"
+      TRUST_PROXY: "loopback,uniquelocal"
+      WAVELOG_CONFIRMATION_MAX_RECORDS: "500000"
+      WAVELOG_MAX_RESPONSE_BYTES: "16777216"
+    volumes:
+      - qso_data:/app/data
+    expose:
+      - "3000"
+    networks:
+      edge:
+        aliases:
+          - qso-trails
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/embed >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  edge:
+    external: true
+    name: ${EDGE_NETWORK:-edge-web}
+
+volumes:
+  qso_data:
+    name: ${QSO_DATA_VOLUME:-qso-trails-data}
