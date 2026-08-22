@@ -10,10 +10,14 @@ assert.match(globe,/const earthMode=requestedTheme==='earth'/,'Earth must be own
 assert.match(globe,/getContext\('webgl'/,'Earth must use the textured sphere renderer');
 assert.match(globe,/ctx\.drawImage\(surface,0,0,w,h\)/,'Earth texture must be composited into the main capture canvas');
 assert.match(globe,/gl\.uniform2f\(state\.rotation,rotation\.x,rotation\.y\)/,'Earth texture must use the same rotation state as QSO paths');
+assert.match(globe,/webglcontextlost/,'Earth must fall back when its WebGL context is lost');
+assert.match(globe,/gl\.isContextLost\?\.\(\)/,'Earth draw path must detect an already-lost WebGL context');
 assert.match(globe,/if\(requestedBand!=='ALL'&&!bands\.includes\(requestedBand\)\)bands\.push\(requestedBand\)/,'URL band must remain active even when capped public rows omit that band');
 assert.match(globe,/if\(requestedBand!=='ALL'\)bandReplay\.value=requestedBand/,'URL band must initialize the shared globe filter independently of returned rows');
 assert.match(globe,/settings=\{\.\.\.settings,\.\.\.\(d\.settings\|\|\{\}\)\}/,'live snapshots must refresh shared public settings');
+assert.match(globe,/if\(replayCurrent&&!knownKeys\.has\(key\(replayCurrent\)\)\)/,'live refreshes must clear an evicted replay/live marker');
 assert.match(globe,/if\(visibleFresh\.length\)[\s\S]*?focus\(q\)\}draw\(\)/,'successful live snapshots must redraw even when fresh records are filtered out');
+assert.match(globe,/settings\.embedCount==='lotw'\?shown:/,'LoTW-only aggregate mode must not be labeled as a published-QSO denominator');
 assert.match(globe,/qso-trails:public-settings/,'filtered settings refreshes must feed the main globe renderer');
 assert.match(globe,/addEventListener\('resize',\(\)=>requestAnimationFrame\(draw\)\)/,'viewport resize must redraw the main globe canvas');
 assert.match(globe,/function setEarthStatus\(text\)/,'Earth texture completion must use guarded status updates');
@@ -25,5 +29,10 @@ assert.doesNotMatch(themePack,/earthC|visibility\s*=\s*['"]hidden['"]|drawImage\
 const lotw=read('public/embed-lotw.js');
 assert.match(lotw,/if\(visuallyFiltered\)[\s\S]*?qso-trails:public-settings/,'filtered embeds must poll public settings without writing unfiltered aggregates');
 assert.doesNotMatch(lotw,/if\(filteredBand\|\|filteredDays\)return/,'filtered embeds must not disable settings polling');
+
+const extras=read('public/embed-extras.js');
+assert.match(extras,/const visuallyFiltered=/,'DXCC extras must detect URL-scoped visual filters');
+assert.match(extras,/DXCC progress: unavailable for filtered view/,'filtered embeds must not display unfiltered DXCC aggregates');
+assert.match(extras,/if\(visuallyFiltered\)\{renderDxcc\(null\);return;\}/,'filtered DXCC views must not fetch the server-wide aggregate');
 
 console.log('embed renderer regression tests passed');
