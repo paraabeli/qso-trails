@@ -6,7 +6,9 @@ const { parseCoord, safeEqual } = require('../security-helpers');
 assert.strictEqual(safeEqual('admin', 'admin'), true);
 assert.strictEqual(safeEqual('admin', 'Admin'), false);
 assert.strictEqual(safeEqual('short', 'shorter'), false);
-assert.strictEqual(safeEqual('x'.repeat(4097), 'x'.repeat(4097)), false);
+assert.strictEqual(safeEqual('x'.repeat(4097), 'x'.repeat(4097)), true);
+assert.strictEqual(safeEqual('x'.repeat(4097), 'x'.repeat(4096) + 'y'), false);
+assert.strictEqual(safeEqual('x'.repeat(16385), 'x'.repeat(16385)), false);
 
 assert.strictEqual(parseCoord('60.1699', true), 60.1699);
 assert.strictEqual(parseCoord('N 60 10.194', true), 60 + 10.194 / 60);
