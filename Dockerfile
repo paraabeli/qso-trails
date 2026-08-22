@@ -13,8 +13,11 @@ COPY qso-helpers.js ./
 COPY privacy-guard.js ./
 COPY network-guard.js ./
 COPY privacy-defaults.js ./
+COPY png-codec.js ./
+COPY earth-texture.js ./
 COPY static-render.js ./
 COPY static-publish.js ./
+COPY static-theme-pack.js ./
 COPY lotw-feature.js ./
 COPY public ./public
 
