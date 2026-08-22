@@ -66,7 +66,7 @@ The local server uses port `3000` by default. Docker users should choose one of 
 
 ## Docker deployment
 
-Production:
+Standalone production with its own Caddy:
 
 ```bash
 cp .env.production.example .env.production
@@ -76,6 +76,19 @@ docker compose \
   -f compose.prod.yaml \
   up -d --build
 ```
+
+External Cloudflare/Caddy edge with SSH-only admin:
+
+```bash
+cp .env.external-edge.example .env.external-edge
+# edit secrets, domain, shared Docker network and embed origin
+docker compose \
+  --env-file .env.external-edge \
+  -f compose.external-edge.yaml \
+  up -d --build
+```
+
+The external-edge mode is intended for a VPS whose existing Caddy already owns ports 80/443. QSO Trails joins that proxy's private Docker network, leaves app port 3000 unpublished, blocks public admin routes at the edge, and reaches admin through an SSH tunnel to a loopback-only proxy listener.
 
 Development/local POC:
 
@@ -87,9 +100,9 @@ docker compose \
   up -d --build
 ```
 
-The development stack binds only to `127.0.0.1:3000`. Production exposes the service through Caddy and does not publish the application port directly.
+The development stack binds only to `127.0.0.1:3000`. Standalone production exposes the service through its own Caddy; external-edge production reuses an existing edge Caddy and does not publish the application port directly.
 
-Full deployment instructions are in [DEPLOYMENT.md](docs/DEPLOYMENT.md) and [LOCAL_POC.md](docs/LOCAL_POC.md).
+Full deployment instructions are in [DEPLOYMENT.md](docs/DEPLOYMENT.md), [EXTERNAL_EDGE_DEPLOYMENT.md](docs/EXTERNAL_EDGE_DEPLOYMENT.md), and [LOCAL_POC.md](docs/LOCAL_POC.md).
 
 ## Wavelog setup
 
@@ -115,7 +128,7 @@ Intentionally public endpoints:
 /assets/*.css
 ```
 
-`/admin` is authenticated. Generic `/assets` serving blocks HTML documents. Treat everything returned by a public endpoint or rendered in the public map/image as public information.
+`/admin` is authenticated. Deployments may additionally block admin routes at an upstream edge. Generic `/assets` serving blocks HTML documents. Treat everything returned by a public endpoint or rendered in the public map/image as public information.
 
 Presentation switches such as `name=0`, `stats=0`, `legend=0`, and `details=0` only change visible presentation. They do not grant permission to publish additional data.
 
