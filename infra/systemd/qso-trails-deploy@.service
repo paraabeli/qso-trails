@@ -1,0 +1,12 @@
+[Unit]
+Description=Deploy QSO Trails external-edge stack as %i
+Requires=docker.service
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=%i
+WorkingDirectory=/opt/qso-trails
+Environment=QSO_TRAILS_DIR=/opt/qso-trails
+ExecStart=/bin/bash /opt/qso-trails/scripts/deploy-external-edge.sh
