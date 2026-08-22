@@ -10,7 +10,7 @@
 		format filter {
 			request>remote_ip ip_mask 16 32
 			request>client_ip ip_mask 16 32
-			request>uri regexp \\?.*$ ""
+			request>uri regexp [?].*$ ""
 			request>headers delete
 			resp_headers delete
 			wrap json
