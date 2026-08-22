@@ -1,0 +1,31 @@
+# Example QSO Trails routes for an existing Caddy edge.
+#
+# Assumptions:
+# - qso.example.com is proxied by Cloudflare.
+# - this Caddy container shares the external Docker network with QSO Trails.
+# - the edge container publishes its port 3300 only as 127.0.0.1:3300 on the host.
+# - a Cloudflare Origin CA certificate covering qso.example.com is mounted at /certs.
+
+qso.example.com {
+  tls /certs/origin.pem /certs/origin-key.pem
+  encode zstd gzip
+
+  @admin path /admin /admin/* /api/admin/*
+  respond @admin 404
+
+  reverse_proxy qso-trails:3000 {
+    # Safe only when the origin itself accepts public HTTP/HTTPS exclusively
+    # from Cloudflare source ranges.
+    header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+    header_up X-Real-IP {http.request.header.CF-Connecting-IP}
+  }
+}
+
+# Private admin entrypoint. Publish this listener only on host loopback, e.g.
+# Docker Compose: 127.0.0.1:3300:3300
+:3300 {
+  reverse_proxy qso-trails:3000 {
+    header_up X-Forwarded-For 127.0.0.1
+    header_up X-Real-IP 127.0.0.1
+  }
+}
