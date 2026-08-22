@@ -1,10 +1,16 @@
 # Deployment Guide
 
-QSO Trails has two explicit Docker Compose deployment modes. Keep them separate; they have different network and secret assumptions.
+QSO Trails has three explicit Docker deployment modes. Keep them separate because their network and trust assumptions differ.
+
+- `compose.prod.yaml` — standalone Internet-facing production with its own Caddy.
+- `compose.external-edge.yaml` — production behind an existing Cloudflare/Caddy edge, with SSH-only admin.
+- `compose.dev.yaml` — loopback-only development/local POC.
+
+For the shared-edge model, see [EXTERNAL_EDGE_DEPLOYMENT.md](EXTERNAL_EDGE_DEPLOYMENT.md). It includes `qso.example.com` / `example.com` examples, a shared Docker network, public-admin blocking, SSH tunnel access, Cloudflare-only origin filtering, automatic code deployment, and systemd timers.
 
 ## Production: `compose.prod.yaml`
 
-Production consists of:
+Standalone production consists of:
 
 ```text
 Internet
@@ -31,7 +37,7 @@ WAVELOG_CONFIRMATION_MAX_RECORDS=500000
 WAVELOG_MAX_RESPONSE_BYTES=16777216
 ```
 
-The proxy policy replaces the old fixed one-hop trust assumption. It trusts Caddy when Caddy reaches the application from the private Docker network, but does not trust arbitrary public peers merely because they supply forwarding headers.
+The proxy policy trusts the local/private reverse proxy path but does not trust arbitrary public peers merely because they supply forwarding headers.
 
 ### Create production environment
 
@@ -81,7 +87,7 @@ Confirm the `app` service does **not** have a host `ports:` mapping.
 ### Production updates
 
 ```bash
-git pull
+git pull --ff-only
 
 docker compose \
   --env-file .env.production \
@@ -99,6 +105,39 @@ docker compose \
 ```
 
 Caddy access logs can contain client IP addresses and requested URL paths/query parameters. Treat host/container logs according to your operational privacy policy and keep log retention bounded.
+
+## External edge: `compose.external-edge.yaml`
+
+This mode does **not** start another Caddy. The application joins an existing external Docker network used by the VPS edge proxy.
+
+Canonical example:
+
+```text
+Cloudflare
+   |
+existing Caddy :443
+   |
+qso.example.com -> qso-trails:3000
+
+workstation -> SSH -> VPS 127.0.0.1:3300 -> Caddy -> qso-trails:3000
+```
+
+The companion Compose:
+
+- keeps port 3000 unpublished;
+- uses the hardened production container settings;
+- forces `ADMIN_ALLOWED_IPS=127.0.0.1`;
+- stores application state in a named volume;
+- joins `${EDGE_NETWORK:-edge-web}`.
+
+The existing edge proxy must:
+
+- route `qso.example.com` to `qso-trails:3000`;
+- return 404 for public `/admin`, `/admin/*`, and `/api/admin/*`;
+- publish its private admin listener only as `127.0.0.1:3300` on the VPS;
+- overwrite the private listener's forwarded client address with `127.0.0.1`.
+
+Follow [EXTERNAL_EDGE_DEPLOYMENT.md](EXTERNAL_EDGE_DEPLOYMENT.md) rather than mixing pieces from standalone production.
 
 ## Development/local: `compose.dev.yaml`
 
@@ -153,6 +192,7 @@ Runtime files are intentionally untracked:
 ```text
 .env
 .env.production
+.env.external-edge
 .env.development
 .env.local
 .env.anything-else
@@ -160,10 +200,10 @@ Runtime files are intentionally untracked:
 
 `.gitignore` and `.dockerignore` ignore `.env` plus `.env.*`; only `.env.example` and `.env.*.example` templates are allowed in Git/build context.
 
-You should still protect the files on the host, for example:
+Protect runtime environment files, for example:
 
 ```bash
-chmod 600 .env.production .env.development
+chmod 600 .env.production .env.external-edge .env.development
 ```
 
 Docker environment variables are not a secret-management system against a compromised/root Docker host. The threat model assumes the Docker host and Docker daemon are trusted. For larger deployments, use an external secret-management mechanism appropriate to the platform.
@@ -172,7 +212,7 @@ Docker environment variables are not a secret-management system against a compro
 
 Private application state is stored in the app-only named volume. It can contain normalized private QSO records, encrypted Wavelog configuration/token, settings, the private LoTW confirmation cache, and the current sanitized public snapshot.
 
-Caddy does not mount the QSO data volume. Do not publish or back up the volume to a public location. Backups should receive the same protection as the original log data.
+Do not publish or back up the volume to a public location. Backups should receive the same protection as the original private data.
 
 ## Public endpoints
 
@@ -186,16 +226,20 @@ The intended public surface is:
 
 HTML files in the public source directory are blocked from the generic `/assets` mount; `/admin` and `/embed` are served through their dedicated routes/headers.
 
-`/api/public` and `/static/qrz.png` use `Cache-Control: no-store` in the hardened privacy layer.
+The external-edge mode additionally blocks admin routes at the upstream public proxy.
 
 ## Admin endpoints
+
+Application admin endpoints are:
 
 - `/admin`
 - `/api/admin/*`
 
 Admin requires Basic Auth; mutation requests also require CSRF protection. Production additionally requires the IP/CIDR allowlist.
 
-The canonical topology is Caddy directly in front of the app on a private Docker network. `network-guard.js` converts the core fixed proxy setting into the configured `TRUST_PROXY` policy. If you add Cloudflare, another load balancer, ingress controller, or other proxy path, update and test the trust policy before relying on client-IP allowlisting/rate limiting.
+In external-edge mode the effective allowlist is loopback-only and the upstream public proxy denies admin routes, so administration happens through the documented SSH tunnel.
+
+If you add Cloudflare, another reverse proxy, Kubernetes ingress, or a load balancer, review `TRUST_PROXY` and the actual forwarded-client-IP path before relying on client-IP allowlisting or rate limiting.
 
 ## Wavelog
 
@@ -225,23 +269,22 @@ Detailed behavior is in `docs/NETWORK_BOUNDARY_HARDENING.md`.
 
 `compose.yaml` remains temporarily for existing installations. It uses the same hardened Dockerfile, admin allowlist requirement, trusted-proxy policy and Wavelog resource limits, but uses the traditional `.env` filename.
 
-New installs should choose `compose.prod.yaml` or `compose.dev.yaml` explicitly.
+New installs should choose one explicit mode rather than relying on the legacy file.
 
 ## Before exposing a server to the Internet
 
-Confirm all of the following:
+Confirm the requirements for the deployment mode you selected. At minimum:
 
-- production uses `compose.prod.yaml`;
-- app port 3000 is not published by Docker/firewall/NAT;
-- only ports 80/443 reach Caddy;
-- `.env.production` has unique secrets and is not tracked;
-- `ADMIN_ALLOWED_IPS` contains the actual administrator source addresses;
-- `TRUST_PROXY` still matches the actual proxy topology;
+- app port 3000 is not publicly published;
+- runtime environment files contain unique secrets and are not tracked;
+- `TRUST_PROXY` matches the real proxy topology;
 - Wavelog token has only `qso:read` + `confirmation:read`;
 - `ALLOW_INSECURE_WAVELOG=false` unless explicitly required;
 - `ALLOW_PRIVATE_WAVELOG=false` unless explicitly required;
 - public coordinate precision and optional fields have been reviewed in Admin;
 - `/api/public` contains only information you intend to make public;
-- host/Docker/Caddy are patched and backups/logs are protected.
+- host/Docker/proxy components are patched and backups/logs are protected.
 
-See `SECURITY.md`, `docs/SECURITY_PRIVACY_HARDENING.md`, and `docs/NETWORK_BOUNDARY_HARDENING.md` for the threat model and controls.
+For external-edge mode also verify public admin routes are blocked, the private proxy listener binds only to VPS loopback, and Cloudflare-only origin rules do not interfere with Docker egress.
+
+See `SECURITY.md`, `docs/SECURITY_PRIVACY_HARDENING.md`, `docs/NETWORK_BOUNDARY_HARDENING.md`, and `docs/EXTERNAL_EDGE_DEPLOYMENT.md` for the relevant threat model and controls.
