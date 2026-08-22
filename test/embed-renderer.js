@@ -34,8 +34,10 @@ assert.match(lotw,/detail:\{settings:data\?\.settings\|\|\{\},qsoCount:/,'filter
 assert.doesNotMatch(lotw,/if\(filteredBand\|\|filteredDays\)return/,'filtered embeds must not disable settings polling');
 
 const extras=read('public/embed-extras.js');
-assert.match(extras,/const visuallyFiltered=/,'DXCC extras must detect URL-scoped visual filters');
+assert.match(extras,/function visuallyFiltered\(\)/,'DXCC extras must evaluate the active visual filter dynamically');
+assert.match(extras,/bandReplay\?\.value\|\|query\.get\('band'\)/,'DXCC filtering must follow the active band selector');
 assert.match(extras,/DXCC progress: unavailable for filtered view/,'filtered embeds must not display unfiltered DXCC aggregates');
-assert.match(extras,/if\(visuallyFiltered\)\{renderDxcc\(null\);return;\}/,'filtered DXCC views must not fetch the server-wide aggregate');
+assert.match(extras,/if\(visuallyFiltered\(\)\)\{renderDxcc\(null\);return;\}/,'filtered DXCC views must not fetch the server-wide aggregate');
+assert.match(extras,/bandReplay\?\.addEventListener\('change',\(\)=>\{refreshDxcc\(\);updateStatsTimer\(\);\}\)/,'changing the band selector must immediately refresh DXCC scope and polling');
 
 console.log('embed renderer regression tests passed');
