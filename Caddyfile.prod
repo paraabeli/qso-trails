@@ -1,0 +1,24 @@
+{$DOMAIN} {
+	log {
+		output file /var/log/qso-trails/access.log {
+			mode 0600
+			roll_at 00:00
+			roll_size 20mb
+			roll_keep 30
+			roll_keep_for 720h
+		}
+		format filter {
+			request>remote_ip ip_mask 16 32
+			request>client_ip ip_mask 16 32
+			request>uri regexp \\?.*$ ""
+			request>headers delete
+			resp_headers delete
+			wrap json
+		}
+	}
+
+	@noise path /assets/* /favicon.ico
+	log_skip @noise
+
+	reverse_proxy app:3000
+}
