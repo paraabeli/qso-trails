@@ -9,6 +9,7 @@ RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
     && npm cache clean --force
 
 COPY server.js ./
+COPY qso-helpers.js ./
 COPY privacy-guard.js ./
 COPY network-guard.js ./
 COPY privacy-defaults.js ./
