@@ -1,0 +1,9 @@
+[Unit]
+Description=Refresh QSO Trails Cloudflare-only origin firewall
+Requires=docker.service
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/qso-trails/scripts/cloudflare-origin-lock.sh
