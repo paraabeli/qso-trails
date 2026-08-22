@@ -11,6 +11,7 @@ RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
 COPY server.js ./
 COPY qso-helpers.js ./
 COPY safe-files.js ./
+COPY security-helpers.js ./
 COPY privacy-guard.js ./
 COPY network-guard.js ./
 COPY privacy-defaults.js ./

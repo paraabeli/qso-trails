@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const { rateLimit } = require('express-rate-limit');
 const multer = require('multer');
 const fs = require('fs/promises');
 const path = require('path');
@@ -10,6 +11,7 @@ const net = require('net');
 const topojson = require('topojson-client');
 const worldAtlas = require('world-atlas/countries-50m.json');
 const { allowedExactFile } = require('./safe-files');
+const { parseCoord, safeEqual } = require('./security-helpers');
 const { distanceKm, maidenheadToLatLon, positionAtPrecision, publicHome, qsoSortKey, qsoTimestamp, sanitizePublicQso } = require('./qso-helpers');
 
 const app = express();
@@ -105,14 +107,6 @@ async function writeJson(file, value) {
   await fs.rename(tmp, target);
 }
 
-function fixedHash(value) {
-  return crypto.createHash('sha256').update(String(value)).digest();
-}
-
-function safeEqual(a, b) {
-  return crypto.timingSafeEqual(fixedHash(a), fixedHash(b));
-}
-
 function requestIp(req) {
   return String(req.ip || req.socket.remoteAddress || '').replace(/^::ffff:/, '');
 }
@@ -195,34 +189,22 @@ function requireCsrf(req, res, next) {
   next();
 }
 
-function makeRateLimiter({ windowMs, max, label }) {
-  const buckets = new Map();
-  setInterval(() => {
-    const now = Date.now();
-    for (const [key, value] of buckets) if (now - value.startedAt > windowMs * 2) buckets.delete(key);
-  }, Math.max(60_000, windowMs)).unref();
-
-  return (req, res, next) => {
-    const key = `${label}:${requestIp(req)}`;
-    const now = Date.now();
-    let bucket = buckets.get(key);
-    if (!bucket || now - bucket.startedAt >= windowMs) bucket = { startedAt: now, count: 0 };
-    bucket.count++;
-    buckets.set(key, bucket);
-    const remaining = Math.max(0, max - bucket.count);
-    res.set('RateLimit-Limit', String(max));
-    res.set('RateLimit-Remaining', String(remaining));
-    res.set('RateLimit-Reset', String(Math.ceil((bucket.startedAt + windowMs) / 1000)));
-    if (bucket.count > max) {
-      res.set('Retry-After', String(Math.ceil((bucket.startedAt + windowMs - now) / 1000)));
-      return res.status(429).json({ error: 'Too many requests.' });
-    }
-    next();
-  };
-}
-
-const publicApiRateLimit = makeRateLimiter({ windowMs: 60_000, max: 180, label: 'public' });
-const adminApiRateLimit = makeRateLimiter({ windowMs: 60_000, max: 120, label: 'admin' });
+const publicApiRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 180,
+  standardHeaders: 'draft-6',
+  legacyHeaders: false,
+  identifier: 'public',
+  message: { error: 'Too many requests.' }
+});
+const adminApiRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 120,
+  standardHeaders: 'draft-6',
+  legacyHeaders: false,
+  identifier: 'admin',
+  message: { error: 'Too many requests.' }
+});
 
 function commonSecurityHeaders(req, res, next) {
   res.set('X-Content-Type-Options', 'nosniff');
@@ -247,19 +229,6 @@ function embedDocumentHeaders(req, res, next) {
   res.set('Cache-Control', 'public, max-age=300');
   res.set('Content-Security-Policy', `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors ${EMBED_FRAME_ANCESTORS}; object-src 'none'; base-uri 'none'; form-action 'none'`);
   next();
-}
-
-function parseCoord(value, isLat) {
-  if (value == null || value === '') return null;
-  const text = String(value).trim().toUpperCase();
-  const direct = Number(text);
-  if (Number.isFinite(direct) && Math.abs(direct) <= (isLat ? 90 : 180)) return direct;
-  const match = text.match(/^([NSEW])?\s*(\d{1,3})[:\s](\d{1,2}(?:\.\d+)?)\s*([NSEW])?$/);
-  if (!match) return null;
-  let result = Number(match[2]) + Number(match[3]) / 60;
-  const hemi = match[1] || match[4];
-  if (hemi === 'S' || hemi === 'W') result = -result;
-  return Math.abs(result) <= (isLat ? 90 : 180) ? result : null;
 }
 
 function qsoPosition(record) {
@@ -655,7 +624,7 @@ app.use(commonSecurityHeaders);
 app.use('/assets', express.static(PUBLIC, { index: false, maxAge: '1h', etag: true }));
 
 app.get('/', (req, res) => res.redirect('/embed'));
-app.get('/embed', embedDocumentHeaders, (req, res) => res.sendFile(path.join(PUBLIC, 'embed.html')));
+app.get('/embed', publicApiRateLimit, embedDocumentHeaders, (req, res) => res.sendFile(path.join(PUBLIC, 'embed.html')));
 app.get('/admin', adminApiRateLimit, adminAuth, adminDocumentHeaders, (req, res) => res.sendFile(path.join(PUBLIC, 'admin.html')));
 
 app.get('/api/world', publicApiRateLimit, (req, res) => {

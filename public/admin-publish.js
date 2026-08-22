@@ -17,9 +17,9 @@
   if(staticPreview){
     const box=document.createElement('div');box.id='staticPublishControls';
     const projectionLabel=document.createElement('label');projectionLabel.textContent='Projection';
-    const projection=document.createElement('select');projection.id='staticProjection';projection.innerHTML='<option value="globe">3D globe</option><option value="mercator">Mercator map</option>';projectionLabel.append(projection);
+    const projection=document.createElement('select');projection.id='staticProjection';projection.replaceChildren(new Option('3D globe','globe'),new Option('Mercator map','mercator'));projectionLabel.append(projection);
     const themeLabel=document.createElement('label');themeLabel.textContent='Static theme';
-    const theme=document.createElement('select');theme.id='staticTheme';theme.innerHTML='<option value="retro">Retro</option><option value="clean">Clean</option><option value="futuristic">Futuristic</option><option value="rough">Rough / field-map</option>';themeLabel.append(theme);
+    const theme=document.createElement('select');theme.id='staticTheme';theme.replaceChildren(new Option('Retro','retro'),new Option('Clean','clean'),new Option('Futuristic','futuristic'),new Option('Rough / field-map','rough'));themeLabel.append(theme);
     box.append(projectionLabel,themeLabel,makeHeading('Static visible text'),makeToggle('staticShowName','Station label'),makeToggle('staticShowStats','QSO count'),makeToggle('staticShowLegend','Band legend'),makeToggle('staticShowDxcc','DXCC summary'),makeToggle('staticShowUpdated','Generated timestamp'));
     const note=document.createElement('small');note.textContent='Theme and projection are visual-only. The PNG still uses only the sanitized public snapshot.';box.append(note);
     staticPreview.before(box);
@@ -44,7 +44,7 @@
     setFlag(url,'name',checked('embedShowName'));setFlag(url,'stats',checked('embedShowStats'));setFlag(url,'legend',checked('embedShowLegend'));setFlag(url,'dxcc',checked('embedShowDxcc'));setFlag(url,'details',checked('embedShowDetails'));
     const next=text.replace(match[1],url.toString());
     if(next!==text){rewritingIframe=true;iframePre.textContent=next;rewritingIframe=false;}
-    const preview=$('preview');if(preview){const local=new URL(url.pathname+url.search,location.origin);local.searchParams.set('preview',String(Date.now()));preview.src=local.pathname+local.search;}
+    const preview=$('preview');if(preview){const local=new URL('/embed',location.origin);setFlag(local,'name',checked('embedShowName'));setFlag(local,'stats',checked('embedShowStats'));setFlag(local,'legend',checked('embedShowLegend'));setFlag(local,'dxcc',checked('embedShowDxcc'));setFlag(local,'details',checked('embedShowDetails'));local.searchParams.set('preview',String(Date.now()));preview.src=local.pathname+local.search;}
   }
 
   function staticUrl(){
@@ -57,7 +57,7 @@
 
   function applyStaticControls(){
     if(rewritingStatic||!staticPreview)return;
-    const url=staticUrl(),preview=new URL(url);preview.searchParams.set('preview',String(Date.now()));staticPreview.src=preview.pathname+preview.search;
+    const url=staticUrl(),preview=new URL('/static/qrz.png',location.origin);preview.searchParams.set('projection',$('staticProjection')?.value==='mercator'?'mercator':'globe');preview.searchParams.set('theme',['retro','clean','futuristic','rough'].includes($('staticTheme')?.value)?$('staticTheme').value:'retro');setFlag(preview,'name',checked('staticShowName'));setFlag(preview,'stats',checked('staticShowStats'));setFlag(preview,'legend',checked('staticShowLegend'));setFlag(preview,'dxcc',checked('staticShowDxcc'));setFlag(preview,'updated',checked('staticShowUpdated'));preview.searchParams.set('preview',String(Date.now()));staticPreview.src=preview.pathname+preview.search;
     const snippet=$('staticSnippet');if(snippet){const imageUrl=url.toString(),embedUrl=new URL('/embed',rememberPublicOrigin()).toString();const next=`Static image URL:\n${imageUrl}\n\nLinked image:\n<a href="${embedUrl}" target="_blank" rel="noopener">\n  <img src="${imageUrl}" width="640" height="500" alt="QSO Trails map">\n</a>`;if(snippet.textContent!==next){rewritingStatic=true;snippet.textContent=next;rewritingStatic=false;}}
   }
 
