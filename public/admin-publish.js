@@ -1,8 +1,13 @@
 'use strict';
 (()=>{
   const $=id=>document.getElementById(id);
+  const expandedThemes=[['midnight','Midnight'],['aurora','Aurora'],['amber','Amber'],['mono','Monochrome'],['ice','Ice'],['earth','Real Earth · NASA Blue Marble']];
+  const staticThemes=new Set(['retro','clean','futuristic','rough',...expandedThemes.map(([value])=>value)]);
+  const addThemeOptions=select=>{if(!select)return;const existing=new Set([...select.options].map(option=>option.value));for(const[value,label]of expandedThemes)if(!existing.has(value))select.append(new Option(label,value));};
   const makeToggle=(id,label,checked=true)=>{const el=document.createElement('label');el.className='inline';const input=document.createElement('input');input.type='checkbox';input.id=id;input.checked=checked;el.append(input,document.createTextNode(` ${label}`));return el;};
   const makeHeading=text=>{const h=document.createElement('h4');h.textContent=text;h.style.marginBottom='6px';return h;};
+
+  addThemeOptions($('visualTheme'));
 
   const iframePre=$('iframe');
   if(iframePre){
@@ -19,14 +24,15 @@
     const projectionLabel=document.createElement('label');projectionLabel.textContent='Projection';
     const projection=document.createElement('select');projection.id='staticProjection';projection.replaceChildren(new Option('3D globe','globe'),new Option('Mercator map','mercator'));projectionLabel.append(projection);
     const themeLabel=document.createElement('label');themeLabel.textContent='Static theme';
-    const theme=document.createElement('select');theme.id='staticTheme';theme.replaceChildren(new Option('Retro','retro'),new Option('Clean','clean'),new Option('Futuristic','futuristic'),new Option('Rough / field-map','rough'));themeLabel.append(theme);
+    const theme=document.createElement('select');theme.id='staticTheme';theme.replaceChildren(new Option('Retro','retro'),new Option('Clean','clean'),new Option('Futuristic','futuristic'),new Option('Rough / field-map','rough'));addThemeOptions(theme);themeLabel.append(theme);
     box.append(projectionLabel,themeLabel,makeHeading('Static visible text'),makeToggle('staticShowName','Station label'),makeToggle('staticShowStats','QSO count'),makeToggle('staticShowLegend','Band legend'),makeToggle('staticShowDxcc','DXCC summary'),makeToggle('staticShowUpdated','Generated timestamp'));
-    const note=document.createElement('small');note.textContent='Theme and projection are visual-only. The PNG still uses only the sanitized public snapshot.';box.append(note);
+    const note=document.createElement('small');note.textContent='Theme and projection are visual-only. Real Earth uses a locally cached NASA Blue Marble texture; visitor browsers do not contact NASA. The PNG still uses only the sanitized public snapshot.';box.append(note);
     staticPreview.before(box);
   }
 
   const checked=id=>$(id)?.checked!==false;
   const setFlag=(url,name,on)=>{if(on)url.searchParams.delete(name);else url.searchParams.set(name,'0');};
+  const staticTheme=()=>staticThemes.has($('staticTheme')?.value)?$('staticTheme').value:'retro';
   let rewritingIframe=false,rewritingStatic=false,publicOrigin='';
 
   function rememberPublicOrigin(){
@@ -50,14 +56,14 @@
   function staticUrl(){
     const url=new URL('/static/qrz.png',rememberPublicOrigin());
     url.searchParams.set('projection',$('staticProjection')?.value==='mercator'?'mercator':'globe');
-    url.searchParams.set('theme',['retro','clean','futuristic','rough'].includes($('staticTheme')?.value)?$('staticTheme').value:'retro');
+    url.searchParams.set('theme',staticTheme());
     setFlag(url,'name',checked('staticShowName'));setFlag(url,'stats',checked('staticShowStats'));setFlag(url,'legend',checked('staticShowLegend'));setFlag(url,'dxcc',checked('staticShowDxcc'));setFlag(url,'updated',checked('staticShowUpdated'));
     return url;
   }
 
   function applyStaticControls(){
     if(rewritingStatic||!staticPreview)return;
-    const url=staticUrl(),preview=new URL('/static/qrz.png',location.origin);preview.searchParams.set('projection',$('staticProjection')?.value==='mercator'?'mercator':'globe');preview.searchParams.set('theme',['retro','clean','futuristic','rough'].includes($('staticTheme')?.value)?$('staticTheme').value:'retro');setFlag(preview,'name',checked('staticShowName'));setFlag(preview,'stats',checked('staticShowStats'));setFlag(preview,'legend',checked('staticShowLegend'));setFlag(preview,'dxcc',checked('staticShowDxcc'));setFlag(preview,'updated',checked('staticShowUpdated'));preview.searchParams.set('preview',String(Date.now()));staticPreview.src=preview.pathname+preview.search;
+    const url=staticUrl(),preview=new URL('/static/qrz.png',location.origin);preview.searchParams.set('projection',$('staticProjection')?.value==='mercator'?'mercator':'globe');preview.searchParams.set('theme',staticTheme());setFlag(preview,'name',checked('staticShowName'));setFlag(preview,'stats',checked('staticShowStats'));setFlag(preview,'legend',checked('staticShowLegend'));setFlag(preview,'dxcc',checked('staticShowDxcc'));setFlag(preview,'updated',checked('staticShowUpdated'));preview.searchParams.set('preview',String(Date.now()));staticPreview.src=preview.pathname+preview.search;
     const snippet=$('staticSnippet');if(snippet){const imageUrl=url.toString(),embedUrl=new URL('/embed',rememberPublicOrigin()).toString();const next=`Static image URL:\n${imageUrl}\n\nLinked image:\n<a href="${embedUrl}" target="_blank" rel="noopener">\n  <img src="${imageUrl}" width="640" height="500" alt="QSO Trails map">\n</a>`;if(snippet.textContent!==next){rewritingStatic=true;snippet.textContent=next;rewritingStatic=false;}}
   }
 
