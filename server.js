@@ -12,6 +12,7 @@ const topojson = require('topojson-client');
 const worldAtlas = require('world-atlas/countries-50m.json');
 const { allowedExactFile } = require('./safe-files');
 const { parseCoord, safeEqual } = require('./security-helpers');
+const { parseAdif } = require('./adif-parser');
 const { distanceKm, maidenheadToLatLon, positionAtPrecision, publicHome, qsoSortKey, qsoTimestamp, sanitizePublicQso } = require('./qso-helpers');
 
 const app = express();
@@ -236,20 +237,6 @@ function qsoPosition(record) {
   const lon = parseCoord(record.LON ?? record.lon, false);
   if (lat !== null && lon !== null) return { lat, lon };
   return maidenheadToLatLon(record.GRIDSQUARE ?? record.gridsquare);
-}
-
-function parseAdif(text) {
-  const records = [];
-  const tag = /<([A-Z0-9_]+):(\d+)(?::[^>]*)?>([^<]*)/ig;
-  for (const chunk of String(text).split(/<EOR>/i)) {
-    const record = {};
-    let match;
-    tag.lastIndex = 0;
-    while ((match = tag.exec(chunk)) !== null) record[match[1].toUpperCase()] = match[3].slice(0, Number(match[2])).trim();
-    if (Object.keys(record).length) records.push(record);
-    if (records.length > 500_000) throw new Error('ADIF contains too many records.');
-  }
-  return records;
 }
 
 function normalizeQso(record, source = 'wavelog') {
