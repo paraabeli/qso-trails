@@ -4,7 +4,9 @@
   const query=new URLSearchParams(location.search);
   const enabled=(name,fallback=true)=>{const value=query.get(name);return value==null?fallback:!['0','false','off','no'].includes(value.toLowerCase());};
   const showName=enabled('name'),showStats=enabled('stats'),showLegend=enabled('legend'),showDxcc=enabled('dxcc'),showDetails=enabled('details');
-  const canvas=$('c'),details=$('details'),dxcc=$('dxccSummary'),panel=$('dxccPanel'),grid=$('dxccGrid'),recordButton=$('recordButton'),downloadButton=$('downloadWebm'),replayRange=$('replayRange'),replayButton=$('replayButton'),loopToggle=$('loopToggle'),liveToggle=$('liveToggle');
+  const filteredDays=Math.max(0,Math.min(3650,Number(query.get('days'))||0));
+  const requestedBand=String(query.get('band')||'all').trim().toLowerCase();
+  const canvas=$('c'),details=$('details'),dxcc=$('dxccSummary'),panel=$('dxccPanel'),grid=$('dxccGrid'),recordButton=$('recordButton'),downloadButton=$('downloadWebm'),replayRange=$('replayRange'),replayButton=$('replayButton'),loopToggle=$('loopToggle'),liveToggle=$('liveToggle'),bandReplay=$('bandReplay');
   if(!canvas||!recordButton||!downloadButton)return;
 
   if($('name'))$('name').hidden=!showName;
@@ -15,8 +17,9 @@
   if(dxcc)dxcc.hidden=!showDxcc;
   if(panel)panel.hidden=!showDxcc;
 
-  let recorder=null,chunks=[],recordingBlob=null,recordingUrl='',completionWatch=null,statsTimer=null;
+  let recorder=null,chunks=[],recordingBlob=null,recordingUrl='',completionWatch=null,statsTimer=null,bandTouched=false;
 
+  function visuallyFiltered(){const selected=bandTouched?String(bandReplay?.value||'all').trim().toLowerCase():requestedBand;return(selected&&selected!=='all')||filteredDays>0;}
   const labelEntity=item=>item?.country?`${item.country} · DXCC ${item.dxcc}`:`DXCC ${item?.dxcc||'?'}`;
   const makeSection=(title,lines)=>{
     const box=document.createElement('div'),strong=document.createElement('strong'),body=document.createElement('div');
@@ -26,6 +29,7 @@
   function renderDxcc(stats){
     if(!showDxcc){if(dxcc)dxcc.hidden=true;if(panel)panel.hidden=true;return;}
     grid.replaceChildren();dxcc.hidden=false;
+    if(visuallyFiltered()){dxcc.textContent='DXCC progress: unavailable for filtered view';panel.hidden=true;return;}
     if(!stats){dxcc.textContent='DXCC progress: hidden by admin privacy settings';panel.hidden=true;return;}
     if(!stats.metadataAvailable){dxcc.textContent='DXCC progress: metadata unavailable · full resync or ADIF re-upload may be required';panel.hidden=true;return;}
     dxcc.textContent=`DXCC progress: ${Number(stats.entities||0).toLocaleString()} entities · ${Number(stats.countries||0).toLocaleString()} countries · ${Number(stats.continents||0)} continents`;
@@ -41,6 +45,7 @@
 
   async function refreshDxcc(){
     if(!showDxcc)return;
+    if(visuallyFiltered()){renderDxcc(null);return;}
     try{
       const response=await fetch('/api/public',{cache:'no-store'});
       if(!response.ok)return;
@@ -92,7 +97,8 @@
     }catch(error){message('This iframe host blocked the download. Open the embed directly in a browser tab and try again.');}
   };
 
-  function updateStatsTimer(){clearInterval(statsTimer);statsTimer=null;if(showDxcc&&liveToggle?.checked)statsTimer=setInterval(refreshDxcc,60000);}
+  function updateStatsTimer(){clearInterval(statsTimer);statsTimer=null;if(showDxcc&&!visuallyFiltered()&&liveToggle?.checked)statsTimer=setInterval(refreshDxcc,60000);}
   liveToggle?.addEventListener('change',updateStatsTimer);
+  bandReplay?.addEventListener('change',()=>{bandTouched=true;refreshDxcc();updateStatsTimer();});
   refreshDxcc();updateStatsTimer();
 })();

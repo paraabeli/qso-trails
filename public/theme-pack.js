@@ -1,72 +1,8 @@
 'use strict';
 (()=>{
-  const query=new URLSearchParams(location.search);
-  const requested=String(query.get('theme')||'night').toLowerCase();
-  const days=Math.max(0,Math.min(3650,Number(query.get('days'))||0));
-  const requestedBand=String(query.get('band')||'');
+  const requested=String(new URLSearchParams(location.search).get('theme')||'night').toLowerCase();
   document.documentElement.dataset.qsoTheme=requested;
-
   const style=document.createElement('style');
-  style.textContent=`html[data-qso-theme="midnight"] #c{filter:saturate(1.35) brightness(.72) contrast(1.18)}html[data-qso-theme="aurora"] #c{filter:hue-rotate(32deg) saturate(1.55) brightness(.92)}html[data-qso-theme="amber"] #c{filter:sepia(.78) saturate(1.35) hue-rotate(345deg) contrast(1.08)}html[data-qso-theme="mono"] #c{filter:grayscale(1) contrast(1.18)}html[data-qso-theme="ice"] #c{filter:saturate(.75) hue-rotate(8deg) brightness(1.08)}html[data-qso-theme="earth"] #wrap{background:#02050a}#earthC{position:absolute;inset:0;width:100%;height:min(620px,75vw);min-height:420px;pointer-events:none;z-index:0}`;
+  style.textContent=`html[data-qso-theme="midnight"] #c{filter:saturate(1.35) brightness(.72) contrast(1.18)}html[data-qso-theme="aurora"] #c{filter:hue-rotate(32deg) saturate(1.55) brightness(.92)}html[data-qso-theme="amber"] #c{filter:sepia(.78) saturate(1.35) hue-rotate(345deg) contrast(1.08)}html[data-qso-theme="mono"] #c{filter:grayscale(1) contrast(1.18)}html[data-qso-theme="ice"] #c{filter:saturate(.75) hue-rotate(8deg) brightness(1.08)}html[data-qso-theme="earth"] #wrap{background:#02050a}`;
   document.head.append(style);
-  if(requested!=='earth')return;
-
-  const original=document.getElementById('c');
-  if(!original)return;
-  const earth=document.createElement('canvas');
-  earth.id='earthC';
-  original.after(earth);
-  original.style.visibility='hidden';
-  const tools=document.querySelector('.tools'),replay=document.getElementById('replay');
-  if(tools)tools.hidden=true;
-  if(replay)replay.hidden=true;
-  const ctx=earth.getContext('2d');
-  let texture=null,data=null;
-
-  const hue=b=>({'160M':280,'80M':260,'60M':235,'40M':210,'30M':185,'20M':160,'17M':130,'15M':95,'12M':65,'10M':35,'6M':10,'2M':330})[String(b||'').toUpperCase()]??200;
-  function size(){const r=original.getBoundingClientRect(),d=Math.min(2,devicePixelRatio||1),w=Math.max(1,Math.floor(r.width*d)),h=Math.max(1,Math.floor(r.height*d));earth.width=w;earth.height=h;return{w,h,d}}
-  function project(lat,lon,w,h){return{x:(lon+180)/360*w,y:(90-lat)/180*h}}
-  function gc(a,b,t){const v=p=>{const A=p.lat*Math.PI/180,B=p.lon*Math.PI/180;return[Math.cos(A)*Math.sin(B),Math.sin(A),Math.cos(A)*Math.cos(B)]},u=v(a),z=v(b),dot=Math.max(-1,Math.min(1,u[0]*z[0]+u[1]*z[1]+u[2]*z[2])),o=Math.acos(dot),so=Math.sin(o);if(so<1e-6)return a;const a0=Math.sin((1-t)*o)/so,a1=Math.sin(t*o)/so,q=[u[0]*a0+z[0]*a1,u[1]*a0+z[1]*a1,u[2]*a0+z[2]*a1];return{lat:Math.asin(q[1])*180/Math.PI,lon:Math.atan2(q[0],q[2])*180/Math.PI}}
-  function qTime(q){const d=String(q.date||'').replace(/\D/g,'').slice(0,8),t=String(q.time||'').replace(/\D/g,'').padEnd(6,'0').slice(0,6);return /^\d{8}$/.test(d)?Date.UTC(+d.slice(0,4),+d.slice(4,6)-1,+d.slice(6,8),+t.slice(0,2),+t.slice(2,4),+t.slice(4,6)):0}
-  function filteredQsos(){let out=Array.isArray(data?.qsos)?data.qsos:[];if(days){const cutoff=Date.now()-days*86400000;out=out.filter(q=>qTime(q)>=cutoff)}if(requestedBand&&requestedBand!=='all')out=out.filter(q=>q.band===requestedBand);return out}
-
-  function draw(){
-    if(!texture||!data)return;
-    const{w,h,d}=size();
-    ctx.clearRect(0,0,w,h);
-    ctx.drawImage(texture,0,0,w,h);
-    ctx.fillStyle='rgba(0,8,18,.18)';
-    ctx.fillRect(0,0,w,h);
-    const home=data.settings?.home;
-    if(!home)return;
-    const qsos=filteredQsos();
-    ctx.lineWidth=Math.max(1.2,d*1.1);
-    for(const q of qsos){
-      ctx.strokeStyle=`hsla(${hue(q.band)},92%,65%,.72)`;
-      ctx.beginPath();
-      let prev=null;
-      for(let i=0;i<=32;i++){
-        const g=gc(home,q,i/32),p=project(g.lat,g.lon,w,h);
-        if(prev&&Math.abs(p.x-prev.x)>w/2){prev=null;continue}
-        prev?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y);
-        prev=p;
-      }
-      ctx.stroke();
-      const p=project(q.lat,q.lon,w,h);
-      ctx.fillStyle=`hsl(${hue(q.band)},95%,70%)`;
-      ctx.beginPath();ctx.arc(p.x,p.y,Math.max(2,2*d),0,Math.PI*2);ctx.fill();
-    }
-    const hp=project(home.lat,home.lon,w,h);
-    ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(hp.x,hp.y,Math.max(3,3*d),0,Math.PI*2);ctx.fill();
-    document.getElementById('name').textContent=data.settings?.stationName||'QSO Trails';
-    const suffix=days?` · last ${days===1?'24h':days+'d'}`:'';
-    document.getElementById('stats').textContent=data.settings?.showStats===false?'':`${qsos.length.toLocaleString()} shown / ${(data.qsos||[]).length.toLocaleString()} published${suffix}`;
-    document.getElementById('details').textContent='Real Earth · NASA Blue Marble · QSO Trails overlay';
-  }
-
-  Promise.all([
-    fetch('/api/public',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('public data');return r.json()}),
-    new Promise((resolve,reject)=>{const i=new Image();i.onload=()=>resolve(i);i.onerror=reject;i.src='/assets/earth-blue-marble.png'})
-  ]).then(([d,i])=>{data=d;texture=i;draw()}).catch(()=>{original.style.visibility='visible';earth.remove();if(tools)tools.hidden=false;if(replay)replay.hidden=false});
-  addEventListener('resize',()=>requestAnimationFrame(draw));
 })();
