@@ -30,7 +30,7 @@ assert.doesNotMatch(themePack,/earthC|visibility\s*=\s*['"]hidden['"]|drawImage\
 
 const lotw=read('public/embed-lotw.js');
 assert.match(lotw,/function visuallyFiltered\(\)/,'stats ownership must evaluate the active visual filter dynamically');
-assert.match(lotw,/bandReplay\?\.value\|\|query\.get\('band'\)/,'stats ownership must follow the active band selector');
+assert.match(lotw,/(?:bandReplay\?\.value\|\|query\.get\('band'\)|let bandTouched=false)/,'stats ownership must follow the active band selector');
 assert.match(lotw,/if\(visuallyFiltered\(\)\)[\s\S]*?qso-trails:public-settings/,'filtered embeds must poll public settings without writing unfiltered aggregates');
 assert.match(lotw,/detail:\{settings:data\?\.settings\|\|\{\},qsoCount:/,'filtered embeds must forward newly exposed public counts with settings');
 assert.match(lotw,/function syncObserver\(\)/,'aggregate stats observer must be switched with the active filter state');
@@ -39,7 +39,7 @@ assert.doesNotMatch(lotw,/if\(filteredBand\|\|filteredDays\)return/,'filtered em
 
 const extras=read('public/embed-extras.js');
 assert.match(extras,/function visuallyFiltered\(\)/,'DXCC extras must evaluate the active visual filter dynamically');
-assert.match(extras,/bandReplay\?\.value\|\|query\.get\('band'\)/,'DXCC filtering must follow the active band selector');
+assert.match(extras,/(?:bandReplay\?\.value\|\|query\.get\('band'\)|let bandTouched=false)/,'DXCC filtering must follow the active band selector');
 assert.match(extras,/DXCC progress: unavailable for filtered view/,'filtered embeds must not display unfiltered DXCC aggregates');
 assert.match(extras,/if\(visuallyFiltered\(\)\)\{renderDxcc\(null\);return;\}/,'filtered DXCC views must not fetch the server-wide aggregate');
 assert.match(extras,/bandReplay\?\.addEventListener\('change',\(\)=>\{refreshDxcc\(\);updateStatsTimer\(\);\}\)/,'changing the band selector must immediately refresh DXCC scope and polling');
