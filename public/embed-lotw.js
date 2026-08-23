@@ -6,8 +6,9 @@
   const query=new URLSearchParams(location.search);
   const bandReplay=document.getElementById('bandReplay');
   const filteredDays=Math.max(0,Number(query.get('days'))||0);
-  let desired='',observer=null;
-  function visuallyFiltered(){const selected=String(bandReplay?.value||query.get('band')||'all').toLowerCase();return selected!=='all'||filteredDays>0;}
+  const requestedBand=String(query.get('band')||'all').trim().toLowerCase();
+  let desired='',observer=null,bandTouched=false;
+  function visuallyFiltered(){const selected=bandTouched?String(bandReplay?.value||'all').trim().toLowerCase():requestedBand;return selected!=='all'||filteredDays>0;}
   function label(data){if(data?.settings?.showStats===false)return '';const mode=data?.settings?.embedCount||'both',qso=Number(data?.qsoCount||0).toLocaleString(),lotw=Number(data?.lotwCount??data?.qsoCount??0).toLocaleString();if(mode==='qso')return `${qso} QSOs`;if(mode==='lotw')return `${lotw} LoTW confirmed`;return `${qso} QSOs · ${lotw} LoTW confirmed`}
   function syncObserver(){
     if(visuallyFiltered()){
@@ -30,7 +31,7 @@
       desired=label(data);if(el.textContent!==desired)el.textContent=desired;
     }catch{}
   }
-  function bandChanged(){desired='';syncObserver();refresh();}
+  function bandChanged(){bandTouched=true;desired='';syncObserver();refresh();}
   bandReplay?.addEventListener('change',bandChanged);
   syncObserver();refresh();setInterval(refresh,60000);
 })();
