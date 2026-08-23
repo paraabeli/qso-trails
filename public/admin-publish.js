@@ -1,6 +1,6 @@
 'use strict';
 (()=>{
-  const $=id=>document.getElementById(id);
+  const byId=id=>document.getElementById(id);
   const expandedThemes=[['midnight','Midnight'],['aurora','Aurora'],['amber','Amber'],['mono','Monochrome'],['ice','Ice'],['earth','Real Earth · NASA Blue Marble']];
   const staticThemes=new Set(['retro','clean','futuristic','rough',...expandedThemes.map(([value])=>value)]);
   const embedPreviewParams=new Set(['days','grayline','theme','mode','opacity','replay','loop','follow','timing','fade','band','live','name','stats','legend','dxcc','details']);
@@ -8,9 +8,9 @@
   const makeToggle=(id,label,checked=true)=>{const el=document.createElement('label');el.className='inline';const input=document.createElement('input');input.type='checkbox';input.id=id;input.checked=checked;el.append(input,document.createTextNode(` ${label}`));return el;};
   const makeHeading=text=>{const h=document.createElement('h4');h.textContent=text;h.style.marginBottom='6px';return h;};
 
-  addThemeOptions($('visualTheme'));
+  addThemeOptions(byId('visualTheme'));
 
-  const iframePre=$('iframe');
+  const iframePre=byId('iframe');
   if(iframePre){
     const box=document.createElement('div');
     box.id='embedTextControls';
@@ -19,7 +19,7 @@
     iframePre.before(box);
   }
 
-  const staticPreview=$('staticPreview');
+  const staticPreview=byId('staticPreview');
   if(staticPreview){
     const box=document.createElement('div');box.id='staticPublishControls';
     const projectionLabel=document.createElement('label');projectionLabel.textContent='Projection';
@@ -31,15 +31,15 @@
     staticPreview.before(box);
   }
 
-  const checked=id=>$(id)?.checked!==false;
+  const checked=id=>byId(id)?.checked!==false;
   const setFlag=(url,name,on)=>{if(on)url.searchParams.delete(name);else url.searchParams.set(name,'0');};
-  const staticTheme=()=>staticThemes.has($('staticTheme')?.value)?$('staticTheme').value:'retro';
+  const staticTheme=()=>staticThemes.has(byId('staticTheme')?.value)?byId('staticTheme').value:'retro';
   let rewritingIframe=false,rewritingStatic=false,publicOrigin='';
 
   function rememberPublicOrigin(){
     const iframeText=iframePre?.textContent||'',iframeMatch=iframeText.match(/src="([^"]+)"/);
     if(iframeMatch){try{const url=new URL(iframeMatch[1],location.origin);if(url.origin!==location.origin||!publicOrigin)publicOrigin=url.origin;}catch{}}
-    const snippetText=$('staticSnippet')?.textContent||'',staticMatch=snippetText.match(/https?:\/\/[^\s<]+\/static\/qrz\.png/);
+    const snippetText=byId('staticSnippet')?.textContent||'',staticMatch=snippetText.match(/https?:\/\/[^\s<]+\/static\/qrz\.png/);
     if(staticMatch){try{const url=new URL(staticMatch[0]);if(url.origin!==location.origin||!publicOrigin)publicOrigin=url.origin;}catch{}}
     return publicOrigin||location.origin;
   }
@@ -58,12 +58,12 @@
     setFlag(url,'name',checked('embedShowName'));setFlag(url,'stats',checked('embedShowStats'));setFlag(url,'legend',checked('embedShowLegend'));setFlag(url,'dxcc',checked('embedShowDxcc'));setFlag(url,'details',checked('embedShowDetails'));
     const next=text.replace(match[1],url.toString());
     if(next!==text){rewritingIframe=true;iframePre.textContent=next;rewritingIframe=false;}
-    const preview=$('preview');if(preview)preview.src=localEmbedPreview(url);
+    const preview=byId('preview');if(preview)preview.src=localEmbedPreview(url);
   }
 
   function staticUrl(){
     const url=new URL('/static/qrz.png',rememberPublicOrigin());
-    url.searchParams.set('projection',$('staticProjection')?.value==='mercator'?'mercator':'globe');
+    url.searchParams.set('projection',byId('staticProjection')?.value==='mercator'?'mercator':'globe');
     url.searchParams.set('theme',staticTheme());
     setFlag(url,'name',checked('staticShowName'));setFlag(url,'stats',checked('staticShowStats'));setFlag(url,'legend',checked('staticShowLegend'));setFlag(url,'dxcc',checked('staticShowDxcc'));setFlag(url,'updated',checked('staticShowUpdated'));
     return url;
@@ -71,14 +71,14 @@
 
   function applyStaticControls(){
     if(rewritingStatic||!staticPreview)return;
-    const url=staticUrl(),preview=new URL('/static/qrz.png',location.origin);preview.searchParams.set('projection',$('staticProjection')?.value==='mercator'?'mercator':'globe');preview.searchParams.set('theme',staticTheme());setFlag(preview,'name',checked('staticShowName'));setFlag(preview,'stats',checked('staticShowStats'));setFlag(preview,'legend',checked('staticShowLegend'));setFlag(preview,'dxcc',checked('staticShowDxcc'));setFlag(preview,'updated',checked('staticShowUpdated'));preview.searchParams.set('preview',String(Date.now()));staticPreview.src=preview.pathname+preview.search;
-    const snippet=$('staticSnippet');if(snippet){const imageUrl=url.toString(),embedUrl=new URL('/embed',rememberPublicOrigin()).toString();const next=`Static image URL:\n${imageUrl}\n\nLinked image:\n<a href="${embedUrl}" target="_blank" rel="noopener">\n  <img src="${imageUrl}" width="640" height="500" alt="QSO Trails map">\n</a>`;if(snippet.textContent!==next){rewritingStatic=true;snippet.textContent=next;rewritingStatic=false;}}
+    const url=staticUrl(),preview=new URL('/static/qrz.png',location.origin);preview.searchParams.set('projection',byId('staticProjection')?.value==='mercator'?'mercator':'globe');preview.searchParams.set('theme',staticTheme());setFlag(preview,'name',checked('staticShowName'));setFlag(preview,'stats',checked('staticShowStats'));setFlag(preview,'legend',checked('staticShowLegend'));setFlag(preview,'dxcc',checked('staticShowDxcc'));setFlag(preview,'updated',checked('staticShowUpdated'));preview.searchParams.set('preview',String(Date.now()));staticPreview.src=preview.pathname+preview.search;
+    const snippet=byId('staticSnippet');if(snippet){const imageUrl=url.toString(),embedUrl=new URL('/embed',rememberPublicOrigin()).toString();const next=`Static image URL:\n${imageUrl}\n\nLinked image:\n<a href="${embedUrl}" target="_blank" rel="noopener">\n  <img src="${imageUrl}" width="640" height="500" alt="QSO Trails map">\n</a>`;if(snippet.textContent!==next){rewritingStatic=true;snippet.textContent=next;rewritingStatic=false;}}
   }
 
-  for(const id of ['embedShowName','embedShowStats','embedShowLegend','embedShowDxcc','embedShowDetails'])$(id)?.addEventListener('change',applyEmbedControls);
-  for(const id of ['staticProjection','staticTheme','staticShowName','staticShowStats','staticShowLegend','staticShowDxcc','staticShowUpdated'])$(id)?.addEventListener('change',applyStaticControls);
+  for(const id of ['embedShowName','embedShowStats','embedShowLegend','embedShowDxcc','embedShowDetails'])byId(id)?.addEventListener('change',applyEmbedControls);
+  for(const id of ['staticProjection','staticTheme','staticShowName','staticShowStats','staticShowLegend','staticShowDxcc','staticShowUpdated'])byId(id)?.addEventListener('change',applyStaticControls);
 
   if(iframePre)new MutationObserver(()=>queueMicrotask(()=>{rememberPublicOrigin();applyEmbedControls();})).observe(iframePre,{childList:true,characterData:true,subtree:true});
-  const staticSnippet=$('staticSnippet');if(staticSnippet)new MutationObserver(()=>queueMicrotask(()=>{rememberPublicOrigin();applyStaticControls();})).observe(staticSnippet,{childList:true,characterData:true,subtree:true});
+  const staticSnippet=byId('staticSnippet');if(staticSnippet)new MutationObserver(()=>queueMicrotask(()=>{rememberPublicOrigin();applyStaticControls();})).observe(staticSnippet,{childList:true,characterData:true,subtree:true});
   setTimeout(()=>{rememberPublicOrigin();applyEmbedControls();applyStaticControls();},0);
 })();
