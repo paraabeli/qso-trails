@@ -29,8 +29,12 @@ const themePack=read('public/theme-pack.js');
 assert.doesNotMatch(themePack,/earthC|visibility\s*=\s*['"]hidden['"]|drawImage\(texture/,'theme pack must not replace the rotating globe with a flat Earth canvas');
 
 const lotw=read('public/embed-lotw.js');
-assert.match(lotw,/if\(visuallyFiltered(?:\(\))?\)[\s\S]*?qso-trails:public-settings/,'filtered embeds must poll public settings without writing unfiltered aggregates');
+assert.match(lotw,/function visuallyFiltered\(\)/,'stats ownership must evaluate the active visual filter dynamically');
+assert.match(lotw,/bandReplay\?\.value\|\|query\.get\('band'\)/,'stats ownership must follow the active band selector');
+assert.match(lotw,/if\(visuallyFiltered\(\)\)[\s\S]*?qso-trails:public-settings/,'filtered embeds must poll public settings without writing unfiltered aggregates');
 assert.match(lotw,/detail:\{settings:data\?\.settings\|\|\{\},qsoCount:/,'filtered embeds must forward newly exposed public counts with settings');
+assert.match(lotw,/function syncObserver\(\)/,'aggregate stats observer must be switched with the active filter state');
+assert.match(lotw,/bandReplay\?\.addEventListener\('change',bandChanged\)/,'changing the band selector must re-evaluate stats ownership immediately');
 assert.doesNotMatch(lotw,/if\(filteredBand\|\|filteredDays\)return/,'filtered embeds must not disable settings polling');
 
 const extras=read('public/embed-extras.js');
