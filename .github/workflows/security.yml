@@ -62,7 +62,7 @@ jobs:
             caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
       - name: Build production app image
-        run: docker compose --env-file .env.production -f compose.prod.yaml build app
+        run: docker compose --env-file .env.production -f compose.prod.yaml build --build-arg QSO_TRAILS_SKIP_EARTH_BUILD=1 app
 
       - name: Start production app for smoke test
         run: docker compose --env-file .env.production -f compose.prod.yaml run -d --name qso-trails-ci -p 3000:3000 -e ADMIN_ALLOWED_IPS=172.16.0.0/12 -e ADMIN_USER=admin -e ADMIN_PASSWORD=ci-only-long-random-password app
@@ -80,16 +80,19 @@ jobs:
           grep -qi '^cache-control: no-store' public.headers
           test "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/assets/admin.html)" = "404"
 
-          docker exec qso-trails-ci grep -Fq 'Admin UI build 2026-08-26.4' /app/public/admin.html
+          docker exec qso-trails-ci grep -Fq 'Admin UI build 2026-08-26.5' /app/public/admin.html
           docker exec qso-trails-ci grep -Fq 'id="embedShowWebm"' /app/public/admin.html
           docker exec qso-trails-ci grep -Fq 'id="embedShowReplay"' /app/public/admin.html
-          docker exec qso-trails-ci grep -Fq 'id="embedShowTools"' /app/public/admin.html
+          docker exec qso-trails-ci grep -Fq 'id="embedDxccRarity"' /app/public/admin.html
+          docker exec qso-trails-ci grep -Fq 'id="staticShowLotw"' /app/public/admin.html
+          docker exec qso-trails-ci grep -Fq 'id="staticGrid"' /app/public/admin.html
+          docker exec qso-trails-ci grep -Fq 'id="staticSizePreset"' /app/public/admin.html
           docker exec qso-trails-ci grep -Fq 'id="diagnosticsCard"' /app/public/admin.html
           docker exec qso-trails-ci grep -Fq 'Real Earth · NASA Blue Marble NG · 3D globe' /app/public/admin.html
-          docker exec qso-trails-ci grep -Fq 'admin.js?v=20260826-4' /app/public/admin.html
-          docker exec qso-trails-ci grep -Fq 'theme-pack.js?v=20260826-3' /app/public/embed.html
-          docker exec qso-trails-ci grep -Fq 'globe.js?v=20260826-3' /app/public/embed.html
-          curl -fsS -D admin-js.headers 'http://127.0.0.1:3000/assets/admin.js?v=20260826-4' -o /dev/null
+          docker exec qso-trails-ci grep -Fq 'admin.js?v=20260826-5' /app/public/admin.html
+          docker exec qso-trails-ci grep -Fq 'theme-pack.js?v=20260826-5' /app/public/embed.html
+          docker exec qso-trails-ci grep -Fq 'globe.js?v=20260826-5' /app/public/embed.html
+          curl -fsS -D admin-js.headers 'http://127.0.0.1:3000/assets/admin.js?v=20260826-5' -o /dev/null
           grep -qi '^cache-control: no-store' admin-js.headers
 
           test "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/api/admin/diagnostics)" = "401"
@@ -98,7 +101,7 @@ jobs:
           node -e "const d=require('./diagnostics.json');if(!d.earth||!Array.isArray(d.logs)||'csrfToken' in d)process.exit(1)"
 
           docker exec qso-trails-ci node -e "const fs=require('fs'),{encodePng}=require('/app/png-codec');const w=4096,h=2048,p=Buffer.alloc(w*h*4);for(let i=0;i<p.length;i+=4){p[i]=20;p[i+1]=70;p[i+2]=130;p[i+3]=255}fs.writeFileSync('/app/data/earth-blue-marble-ng-200412.png',encodePng(w,h,p))"
-          curl -fsSI 'http://127.0.0.1:3000/assets/earth-blue-marble.png?check=1' | grep -qi '^content-type: image/png'
+          curl -fsSI 'http://127.0.0.1:3000/assets/earth-blue-marble.png' | grep -qi '^content-type: image/png'
           curl -fsS http://127.0.0.1:3000/assets/earth-blue-marble.png -o earth.png
           test "$(xxd -p -l 8 earth.png)" = "89504e470d0a1a0a"
 
@@ -115,31 +118,45 @@ jobs:
           done
 
           for theme in clean earth; do
-            curl -fsS "http://127.0.0.1:3000/static/qrz.png?projection=mercator&theme=$theme&name=0&stats=0&legend=0&dxcc=0&updated=0" -o "qrz-$theme-mercator.png"
+            curl -fsS "http://127.0.0.1:3000/static/qrz.png?projection=mercator&theme=$theme&name=0&stats=0&legend=0&dxcc=0&continents=0&rarity=0&updated=0" -o "qrz-$theme-mercator.png"
             test "$(xxd -p -l 8 qrz-$theme-mercator.png)" = "89504e470d0a1a0a"
             test "$(stat -c%s qrz-$theme-mercator.png)" -gt 1000
           done
           test "$(sha256sum qrz-earth-mercator.png | cut -d' ' -f1)" != "$(sha256sum qrz-clean-mercator.png | cut -d' ' -f1)"
 
-          curl -fsS 'http://127.0.0.1:3000/static/qrz.png?projection=globe&theme=earth&name=0&stats=0&legend=0&dxcc=0&updated=0' -o qrz-earth-globe-plain.png
+          curl -fsS 'http://127.0.0.1:3000/static/qrz.png?projection=globe&theme=earth&name=0&stats=0&legend=0&dxcc=0&continents=0&rarity=0&updated=0' -o qrz-earth-globe-plain.png
           test "$(sha256sum qrz-earth-globe-plain.png | cut -d' ' -f1)" != "$(sha256sum qrz-earth-mercator.png | cut -d' ' -f1)"
 
-          curl -fsS 'http://127.0.0.1:3000/static/qrz.png?projection=globe&theme=earth&width=800' -o qrz-earth-sized.png
+          curl -fsS 'http://127.0.0.1:3000/static/qrz.png?projection=globe&theme=earth&width=800&lotw=1&grid=4&continents=0&rarity=0' -o qrz-earth-sized.png
           curl -fsS 'http://127.0.0.1:3000/static/qrz.png?projection=globe&theme=retro&width=800' -o qrz-retro-sized.png
+          curl -fsS 'http://127.0.0.1:3000/static/qrz.png?projection=globe&theme=earth&size=qrz' -o qrz-preset.png
+          curl -fsS 'http://127.0.0.1:3000/static/qrz.png?projection=globe&theme=earth&size=qso-card' -o qso-card-preset.png
+          curl -fsS 'http://127.0.0.1:3000/static/qrz.png?projection=globe&theme=earth&size=homepage' -o homepage-preset.png
           node - <<'NODE'
           const fs=require('fs');
           const {decodePng}=require('./png-codec');
-          const earth=decodePng(fs.readFileSync('qrz-earth-sized.png'),{maxPixels:1_000_000});
-          const retro=decodePng(fs.readFileSync('qrz-retro-sized.png'),{maxPixels:1_000_000});
-          if(earth.width!==800||earth.height!==400)throw new Error('Earth static size/aspect ratio mismatch');
-          if(retro.width!==800||retro.height!==625)throw new Error('Legacy static size/aspect ratio mismatch');
+          const dimensions=(file,max=2_000_000)=>{const p=decodePng(fs.readFileSync(file),{maxPixels:max});return[p.width,p.height]};
+          if(String(dimensions('qrz-earth-sized.png'))!=='800,625')throw new Error('Earth custom size/aspect ratio mismatch');
+          if(String(dimensions('qrz-retro-sized.png'))!=='800,625')throw new Error('Legacy custom size/aspect ratio mismatch');
+          if(String(dimensions('qrz-preset.png'))!=='640,500')throw new Error('QRZ preset mismatch');
+          if(String(dimensions('qso-card-preset.png'))!=='960,750')throw new Error('QSO card preset mismatch');
+          if(String(dimensions('homepage-preset.png',2_000_000))!=='1280,1000')throw new Error('Homepage preset mismatch');
+
+          const globe=decodePng(fs.readFileSync('qrz-earth-sized.png'),{maxPixels:1_000_000});
+          const mapHeight=Math.round(globe.height*338/500);let minX=globe.width,minY=mapHeight,maxX=-1,maxY=-1;
+          for(let y=0;y<mapHeight;y++)for(let x=0;x<globe.width;x++){
+            const i=(y*globe.width+x)*4;
+            if(globe.data[i+2]>50){minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);}
+          }
+          const sphereWidth=maxX-minX+1,sphereHeight=maxY-minY+1;
+          if(sphereWidth<100||sphereHeight<100||Math.abs(sphereWidth-sphereHeight)>4)throw new Error(`Earth globe is not round: ${sphereWidth}x${sphereHeight}`);
           NODE
 
-          curl -fsS 'http://127.0.0.1:3000/embed?theme=earth' -o earth-embed.html
-          grep -Fq '/assets/theme-pack.js?v=20260826-3' earth-embed.html
-          grep -Fq '/assets/globe.js?v=20260826-3' earth-embed.html
-          grep -Fq '/assets/embed-extras.js?v=20260826-3' earth-embed.html
-          test "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/assets/theme-pack.js?v=20260826-3)" = "200"
+          curl -fsS 'http://127.0.0.1:3000/embed?theme=earth&dxccrare=0&dxccmode=0' -o earth-embed.html
+          grep -Fq '/assets/theme-pack.js?v=20260826-5' earth-embed.html
+          grep -Fq '/assets/globe.js?v=20260826-5' earth-embed.html
+          grep -Fq '/assets/embed-extras.js?v=20260826-5' earth-embed.html
+          test "$(curl -sS -o /dev/null -w '%{http_code}' 'http://127.0.0.1:3000/assets/theme-pack.js?v=20260826-5')" = "200"
           test "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/assets/admin-theme-pack.js)" = "200"
 
       - name: Clean up smoke container
