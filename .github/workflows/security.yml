@@ -87,7 +87,7 @@ jobs:
           grep -qi '^cache-control: no-store' admin-js.headers
           grep -qi '^cache-control: no-store' admin-publish.headers
 
-          docker exec qso-trails-ci node -e "const fs=require('fs'),{encodePng}=require('/app/png-codec');const w=16,h=8,p=Buffer.alloc(w*h*4);for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=(y*w+x)*4;p[i]=20+x*8;p[i+1]=70+y*15;p[i+2]=130+x*4;p[i+3]=255}fs.writeFileSync('/app/data/earth-blue-marble.png',encodePng(w,h,p))"
+          docker exec qso-trails-ci node -e "const fs=require('fs'),{encodePng}=require('/app/png-codec');const w=4096,h=2048,p=Buffer.alloc(w*h*4);for(let i=0;i<p.length;i+=4){p[i]=20;p[i+1]=70;p[i+2]=130;p[i+3]=255}fs.writeFileSync('/app/data/earth-blue-marble-ng-200412.png',encodePng(w,h,p))"
           curl -fsS http://127.0.0.1:3000/assets/earth-blue-marble.png -o earth.png
           test "$(xxd -p -l 8 earth.png)" = "89504e470d0a1a0a"
 
@@ -109,6 +109,17 @@ jobs:
             test "$(stat -c%s qrz-$theme-mercator.png)" -gt 1000
           done
           test "$(sha256sum qrz-earth-mercator.png | cut -d' ' -f1)" != "$(sha256sum qrz-clean-mercator.png | cut -d' ' -f1)"
+
+          curl -fsS 'http://127.0.0.1:3000/static/qrz.png?projection=globe&theme=earth&width=800' -o qrz-earth-sized.png
+          curl -fsS 'http://127.0.0.1:3000/static/qrz.png?projection=globe&theme=retro&width=800' -o qrz-retro-sized.png
+          node - <<'NODE'
+          const fs=require('fs');
+          const {decodePng}=require('./png-codec');
+          const earth=decodePng(fs.readFileSync('qrz-earth-sized.png'),{maxPixels:1_000_000});
+          const retro=decodePng(fs.readFileSync('qrz-retro-sized.png'),{maxPixels:1_000_000});
+          if(earth.width!==800||earth.height!==400)throw new Error('Earth static size/aspect ratio mismatch');
+          if(retro.width!==800||retro.height!==625)throw new Error('Legacy static size/aspect ratio mismatch');
+          NODE
 
           curl -fsS 'http://127.0.0.1:3000/embed?theme=earth' | grep -q '/assets/dom-safety.js'
           test "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/assets/theme-pack.js)" = "200"
