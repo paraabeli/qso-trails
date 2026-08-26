@@ -49,6 +49,10 @@ assert.match(extras,/bandReplay\?\.addEventListener\('change',\(\)=>\{bandTouche
 assert.match(extras,/Most Wanted #/,'DXCC breakdown must show Club Log Most Wanted rank for rarest worked entities');
 assert.match(extras,/nasaImageryCredit/,'Earth embed must render a dedicated imagery credit');
 assert.match(extras,/NASA Earth Observatory · Blue Marble: Next Generation/,'Earth embed must use NASA Earth Observatory attribution');
+assert.match(extras,/showWebm=enabled\('webm'\)/,'embed must support hiding WebM export controls');
+assert.match(extras,/showReplayControls=enabled\('replaycontrols'\)/,'embed must support hiding the replay control box');
+assert.match(extras,/recordButton\.hidden=!showWebm/,'WebM visibility must be applied to the export button');
+assert.match(extras,/replayBox\.hidden=true;replayBox\.style\.display='none'/,'hidden replay controls must stay hidden even when the globe marks replay available');
 
 const staticRenderer=read('static-render.js');
 assert.match(staticRenderer,/RAREST \$\{rare\}/,'static info box must include rarest worked DXCC entities');
@@ -57,5 +61,14 @@ assert.match(staticRenderer,/NASA EARTH OBSERVATORY \/ BLUE MARBLE NEXT GENERATI
 const adminPublish=read('public/admin-publish.js');
 assert.match(adminPublish,/width\.min='320';width\.max='3840'/,'admin static width control must be bounded');
 assert.match(adminPublish,/theme==='earth'\?Math\.round\(width\/2\)/,'admin snippet must keep NASA 2:1 aspect ratio');
+assert.match(adminPublish,/embedShowWebm','WebM export\/download controls'/,'admin must expose a WebM visibility toggle');
+assert.match(adminPublish,/embedShowReplay','Replay \/ play box'/,'admin must expose a replay-box visibility toggle');
+assert.match(adminPublish,/setFlag\(url,'webm',checked\('embedShowWebm'\)\)/,'admin must write the WebM visibility query flag');
+assert.match(adminPublish,/setFlag\(url,'replaycontrols',checked\('embedShowReplay'\)\)/,'admin must write the replay visibility query flag');
+assert.match(adminPublish,/__qsoTrailsAdminPublishLoaded/,'admin publish helper must be idempotent when loaded directly and by older admin.js versions');
+
+const adminHtml=read('public/admin.html');
+assert.match(adminHtml,/admin-publish\.js\?v=20260826-2/,'admin page must load publish controls directly with a fresh asset URL');
+assert.match(adminHtml,/Choose projection, theme, visible text, and a width from 320 to 3840 px/,'admin page must visibly describe scalable static output');
 
 console.log('embed renderer regression tests passed');
