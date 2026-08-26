@@ -13,9 +13,9 @@ No QSO record, callsign, grid, coordinate, Wavelog token, or station identifier 
 
 The ranking is cached in `data/clublog-most-wanted.json` and refreshed at most once per 24 hours. If an update fails but a prior cache exists, QSO Trails continues with the stale cache and marks the source as cached/stale. If no ranking is available, normal DXCC statistics continue to work and the rarest-worked list is empty.
 
-Club Log updates the underlying Most Wanted list on its own schedule; the daily QSO Trails refresh merely avoids keeping an old published ranking longer than necessary.
+The public snapshot exposes only aggregate DXCC statistics. It does not expose additional per-QSO DXCC metadata.
 
-The public snapshot exposes only an aggregate top-three result containing DXCC number, country label when already available, Most Wanted position, and QSO count. It does not expose additional per-QSO DXCC metadata.
+The interactive DXCC breakdown can independently show or hide: continent totals, top entities, rarest worked entities, band totals, mode totals, most distant entity, and newest first-worked entity. These are presentation switches only; hiding or showing a section does not change the underlying public-data privacy policy.
 
 ## NASA Blue Marble: Next Generation
 
@@ -29,32 +29,86 @@ NASA-hosted PNG source used by the renderer:
 
 `https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x5400x2700.png`
 
-The source is a 2:1 equirectangular global image. QSO Trails downloads it only on the server, validates and decodes it with bounded resource limits, then stores a 4096×2048 local PNG cache at `data/earth-blue-marble-ng-200412.png`. The interactive WebGL globe is served a 2048×1024 derivative to remain compatible with lower WebGL texture limits. Static rendering uses the higher-resolution cache.
+The source is a 2:1 equirectangular global **texture**. It is not the aspect ratio of the QSO Trails card and it is not shown as a flat image when `projection=globe` is selected.
 
-Visitor browsers request `/assets/earth-blue-marble.png` from the QSO Trails host; they do not contact NASA.
+### Docker image seed and runtime cache
 
-NASA Earth Observatory requests the credit **NASA Earth Observatory** for republication of Blue Marble: Next Generation imagery. QSO Trails displays `NASA Earth Observatory · Blue Marble: Next Generation` in the interactive Earth view and includes `NASA EARTH OBSERVATORY / BLUE MARBLE NEXT GENERATION` in the static-image information box.
+A normal production Docker build runs `scripts/build-earth-texture.js`. The build downloads the NASA source, validates and decodes it with bounded resource limits, downsamples it to 4096×2048, and stores it at `/app/earth-seed/earth-blue-marble-ng-200412.png` inside the application image.
 
-## Static image sizing
+That build step is intentionally placed before normal application-source copies in the Dockerfile. With ordinary Docker layer caching, UI and application-code changes can reuse the already-built imagery layer instead of downloading the source again. A no-cache build or a change to the imagery build inputs can cause the layer to be rebuilt.
 
-`/static/qrz.png` accepts a bounded `width` query parameter:
+Runtime lookup order is:
+
+1. `/app/data/earth-blue-marble-ng-200412.png` — persistent administrator-refreshed cache;
+2. `/app/earth-seed/earth-blue-marble-ng-200412.png` — texture baked into the Docker image;
+3. bounded server-side NASA download only when neither local copy is available.
+
+The image seed is deliberately outside `/app/data` because production normally mounts persistent application data at that path. The mounted data volume therefore cannot hide the image-baked seed.
+
+For deterministic CI or an intentionally offline image build, `QSO_TRAILS_SKIP_EARTH_BUILD=1` skips the external build-time fetch. This is not the normal production setting.
+
+Visitor browsers request `/assets/earth-blue-marble.png` from the QSO Trails host. They never contact NASA. The browser receives a locally generated 2048×1024 derivative and may cache it for 24 hours.
+
+An Admin refresh downloads a new copy into the persistent data cache. If refresh fails, the existing persistent cache or image seed remains usable.
+
+NASA Earth Observatory requests the credit **NASA Earth Observatory** for republication of Blue Marble: Next Generation imagery. QSO Trails displays `NASA Earth Observatory · Blue Marble: Next Generation` in the interactive Earth view and includes the NASA credit in static Earth cards using the actual imagery.
+
+## Globe versus Mercator
+
+`projection=globe` and `projection=mercator` are intentionally different render paths.
+
+The 3D path inverse-projects the equirectangular NASA texture onto a circular sphere with square output pixels, then draws QSO great-circle paths using the same spherical projection. The flat path samples the same texture as a Mercator map.
+
+If NASA imagery is unavailable, the application may use its vector-map fallback, but the fallback keeps the same card dimensions and must not be resized into a 2:1 rectangle. The static response also exposes `X-QSO-Trails-Earth-Fallback: 1` when an Earth request had to use the fallback.
+
+## Static image sizing and presets
+
+All static themes, including `earth`, use the established QSO Trails **640:500 card aspect ratio**. The NASA source remains 2:1 internally as a texture only.
+
+A custom width is bounded to:
 
 - minimum: 320 px
 - default: 640 px
 - maximum: 3840 px
+- height: `width × 500 / 640`
 - maximum rendered pixel count: 12,000,000
 
-The Admin UI exposes the same width control and emits the selected dimensions in the QRZ/static image snippet.
+Examples:
 
-For the NASA `earth` theme, output remains 2:1 to match the source imagery. Examples:
+- `width=640` → 640×500
+- `width=800` → 800×625
+- `width=1920` → 1920×1500
+- `width=3840` → 3840×3000
 
-- `width=640` → 640×320
-- `width=1920` → 1920×960
-- `width=3840` → 3840×1920
+Named presets are also available:
 
-Other static themes preserve the established QSO Trails 640×500 card ratio while scaling to the selected width.
+- `size=qrz` → 640×500
+- `size=qso-card` → 960×750
+- `size=homepage` → 1280×1000
 
-Large rendered images use a byte-bounded in-process cache so repeated 4K requests cannot create an unbounded memory cache. Existing per-client static-image rate limiting still applies.
+The Admin UI exposes those presets plus Custom width. The generated `<img>` snippet always includes the matching width and height.
+
+The globe itself occupies the map portion of the card and is sized from the smaller map dimension, so changing card size cannot stretch the sphere into an oval.
+
+## Selectable static information
+
+The static image URL supports presentation switches that affect only text drawn into the card:
+
+- `name=0` — hide station label;
+- `stats=0` — hide QSO count;
+- `lotw=1` — show LoTW-confirmed count;
+- `legend=0` — hide band legend;
+- `dxcc=0` — hide DXCC entity count;
+- `continents=0` — hide continent count independently of the DXCC entity count;
+- `rarity=0` — hide rarest-worked DXCC information independently;
+- `grid=4` or `grid=6` — show the home Maidenhead locator at the requested length;
+- `updated=0` — hide generated timestamp.
+
+The home-grid renderer enforces the global public home-position precision. Requesting `grid=6` while the station is published at 4-character precision produces only four characters; a presentation URL cannot bypass the privacy setting.
+
+LoTW and DXCC values are aggregate values already maintained in the sanitized public snapshot. The static renderer does not add per-QSO confirmation status, private DXCC metadata, private coordinates, callsigns, dates, modes, or remote grids.
+
+Large rendered images use a byte-bounded in-process cache so repeated large requests cannot create an unbounded memory cache. Existing per-client static-image rate limiting still applies.
 
 ## Updating sources
 
@@ -65,5 +119,6 @@ When changing NASA imagery, verify all of the following before changing `earth-t
 1. the asset is an official NASA-hosted Blue Marble: Next Generation global map suitable for equirectangular texture mapping;
 2. the source page and asset URL are documented here and in `THIRD_PARTY_NOTICES.md`;
 3. visible NASA Earth Observatory credit remains in both interactive and static uses;
-4. the download and decode limits remain bounded; and
-5. the cached image preserves a 2:1 aspect ratio for static exports.
+4. download and decode limits remain bounded;
+5. the source/seed texture preserves its 2:1 equirectangular texture ratio; and
+6. static **card** output remains aspect-ratio safe and the globe remains circular.

@@ -7,17 +7,20 @@ const express = require('express');
 const topojson = require('topojson-client');
 const worldAtlas = require('world-atlas/countries-50m.json');
 const { renderStaticPng, WIDTH: BASE_W, HEIGHT: BASE_H } = require('./static-render');
+const { applyStaticInfo } = require('./static-info');
 const { decodePng, encodePng } = require('./png-codec');
 const { earthPng } = require('./earth-texture');
-const { parseStaticWidth, staticDimensions, resizePng } = require('./static-size');
+const { parseStaticPreset, parseStaticWidth, staticDimensions, resizePng } = require('./static-size');
 
 const SNAPSHOT = path.join(__dirname, 'data', 'public-snapshot.json');
+const SETTINGS = path.join(__dirname, 'data', 'settings.json');
 const world = topojson.feature(worldAtlas, worldAtlas.objects.countries);
 const EXTRA = new Set(['midnight', 'aurora', 'amber', 'mono', 'ice', 'earth']);
 const cache = new Map();
 const EARTH_FALLBACK_RETRY_MS = 60_000;
 const MAX_CACHE_BYTES = 64 * 1024 * 1024;
 const LIM = 85.05112878;
+const MAP_RATIO = 338 / 500;
 let cacheBytes = 0;
 
 function bool(value, fallback = true) {
@@ -26,14 +29,20 @@ function bool(value, fallback = true) {
 }
 
 function opts(query) {
+  const legacyDxcc = bool(query.dxcc);
   return {
     projection: query.projection === 'mercator' ? 'mercator' : 'globe',
     theme: String(query.theme || '').toLowerCase(),
+    preset: parseStaticPreset(query.size),
     width: parseStaticWidth(query.width),
     showName: bool(query.name),
     showStats: bool(query.stats),
+    showLotw: bool(query.lotw, false),
     showLegend: bool(query.legend),
-    showDxcc: bool(query.dxcc),
+    showDxcc: legacyDxcc,
+    showContinents: query.continents == null ? legacyDxcc : bool(query.continents),
+    showRarity: query.rarity == null ? legacyDxcc : bool(query.rarity),
+    gridPrecision: ['4', '6'].includes(String(query.grid)) ? String(query.grid) : 'none',
     showUpdated: bool(query.updated)
   };
 }
@@ -159,9 +168,15 @@ function darkBackground(buffer) {
   }
 }
 
+function mapHeightFor(height) {
+  return Math.max(1, Math.min(height, Math.round(height * MAP_RATIO)));
+}
+
 function fillEarthMercator(buffer, width, height, texture) {
-  for (let y = 0; y < height; y++) {
-    const v = (1 - 2 * ((y + .5) / height)) * Math.PI;
+  darkBackground(buffer);
+  const mapHeight = mapHeightFor(height);
+  for (let y = 0; y < mapHeight; y++) {
+    const v = (1 - 2 * ((y + .5) / mapHeight)) * Math.PI;
     const lat = Math.atan(Math.sinh(v)) * 180 / Math.PI;
     for (let x = 0; x < width; x++) {
       const color = sample(texture, lat, (x + .5) / width * 360 - 180);
@@ -172,10 +187,12 @@ function fillEarthMercator(buffer, width, height, texture) {
 }
 
 function globeProjection(width, height, home) {
+  const mapHeight = mapHeightFor(height);
   const centerLat = Number(home?.lat) || 0, centerLon = Number(home?.lon) || 0;
-  const radius = height * .44, cx = width / 2, cy = height / 2;
+  const radius = Math.max(1, Math.min(width * .46, mapHeight * .455));
+  const cx = width / 2, cy = mapHeight / 2;
   return {
-    radius,
+    radius, cx, cy, mapHeight,
     project(lat, lon) {
       const q = rot(lat, lon, centerLat, centerLon);
       return { x: cx + q.x * radius, y: cy - q.y * radius, z: q.z };
@@ -186,9 +203,9 @@ function globeProjection(width, height, home) {
 
 function fillEarthGlobe(buffer, width, height, texture, home) {
   darkBackground(buffer);
-  const globe = globeProjection(width, height, home), radius = globe.radius, cx = width / 2, cy = height / 2;
+  const globe = globeProjection(width, height, home), { radius, cx, cy } = globe;
   const minX = Math.max(0, Math.floor(cx - radius)), maxX = Math.min(width - 1, Math.ceil(cx + radius));
-  const minY = Math.max(0, Math.floor(cy - radius)), maxY = Math.min(height - 1, Math.ceil(cy + radius));
+  const minY = Math.max(0, Math.floor(cy - radius)), maxY = Math.min(globe.mapHeight - 1, Math.ceil(cy + radius));
   for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) {
     const nx = (x - cx) / radius, ny = (cy - y) / radius, d = nx * nx + ny * ny;
     if (d > 1) continue;
@@ -200,9 +217,10 @@ function fillEarthGlobe(buffer, width, height, texture, home) {
 }
 
 function mercatorProject(width, height, lat, lon) {
+  const mapHeight = mapHeightFor(height);
   const value = Math.max(-LIM, Math.min(LIM, Number(lat) || 0)) * Math.PI / 180;
   const v = Math.log(Math.tan(Math.PI / 4 + value / 2));
-  return { x: (Number(lon) + 180) / 360 * width, y: (1 - (v / Math.PI + 1) / 2) * height, z: 1 };
+  return { x: (Number(lon) + 180) / 360 * width, y: (1 - (v / Math.PI + 1) / 2) * mapHeight, z: 1 };
 }
 
 function drawEarthPaths(buffer, width, height, data, projection) {
@@ -235,38 +253,44 @@ function drawEarthPaths(buffer, width, height, data, projection) {
 
 function compositeFooter(buffer, width, height, basePng) {
   const base = decodePng(basePng, { maxPixels: BASE_W * BASE_H + 10 });
-  const sourceX = 10, sourceY = 338, sourceWidth = 620, sourceHeight = 152;
-  const margin = Math.max(6, Math.round(width * .012));
-  let targetHeight = Math.max(72, Math.round(height * .26));
-  let targetWidth = Math.round(targetHeight * sourceWidth / sourceHeight);
-  if (targetWidth > width - margin * 2) {
-    targetWidth = Math.max(1, width - margin * 2);
-    targetHeight = Math.round(targetWidth * sourceHeight / sourceWidth);
-  }
-  targetHeight = Math.min(targetHeight, Math.max(1, height - margin * 2));
-  const startX = margin, startY = height - margin - targetHeight;
+  const sourceY = Math.round(BASE_H * MAP_RATIO);
+  const sourceHeight = BASE_H - sourceY;
+  const targetY = mapHeightFor(height);
+  const targetHeight = height - targetY;
+  if (targetHeight <= 0) return;
   for (let y = 0; y < targetHeight; y++) {
     const sy = sourceY + Math.min(sourceHeight - 1, Math.floor((y + .5) * sourceHeight / targetHeight));
-    for (let x = 0; x < targetWidth; x++) {
-      const sx = sourceX + Math.min(sourceWidth - 1, Math.floor((x + .5) * sourceWidth / targetWidth));
-      const si = (sy * base.width + sx) * 4, di = ((startY + y) * width + startX + x) * 4;
-      const alpha = (base.data[si + 3] ?? 255) / 255;
-      buffer[di] = clamp(buffer[di] * (1 - alpha) + base.data[si] * alpha);
-      buffer[di + 1] = clamp(buffer[di + 1] * (1 - alpha) + base.data[si + 1] * alpha);
-      buffer[di + 2] = clamp(buffer[di + 2] * (1 - alpha) + base.data[si + 2] * alpha);
+    for (let x = 0; x < width; x++) {
+      const sx = Math.min(base.width - 1, Math.floor((x + .5) * base.width / width));
+      const si = (sy * base.width + sx) * 4, di = ((targetY + y) * width + x) * 4;
+      buffer[di] = base.data[si];
+      buffer[di + 1] = base.data[si + 1];
+      buffer[di + 2] = base.data[si + 2];
       buffer[di + 3] = 255;
     }
   }
 }
 
-function renderEarth(data, texture, options) {
-  const dimensions = staticDimensions(options.width, 'earth');
-  const { width, height } = dimensions;
+function blankFooterBase(data, options, theme = 'clean') {
+  return renderStaticPng(data, world, {
+    ...options,
+    theme,
+    showName: false,
+    showStats: false,
+    showLegend: false,
+    showDxcc: false,
+    showUpdated: false,
+    showNasaCredit: false
+  });
+}
+
+function renderEarth(data, texture, options, privateSettings = {}) {
+  const { width, height } = staticDimensions(options.width, 'earth', options.preset);
   const buffer = Buffer.alloc(width * height * 4);
   if (options.projection === 'mercator') fillEarthMercator(buffer, width, height, texture);
   else fillEarthGlobe(buffer, width, height, texture, data.settings?.home);
   drawEarthPaths(buffer, width, height, data, options.projection);
-  const footer = renderStaticPng(data, world, { ...options, theme: 'clean', showNasaCredit: true });
+  const footer = applyStaticInfo(blankFooterBase(data, options, 'clean'), data, { ...options, showNasaCredit: true }, privateSettings, 'earth');
   compositeFooter(buffer, width, height, footer);
   return encodePng(width, height, buffer);
 }
@@ -285,30 +309,49 @@ function remember(key, item) {
   }
 }
 
+function keyFor(options) {
+  return [
+    options.projection, options.theme, options.preset, options.width,
+    options.showName, options.showStats, options.showLotw, options.showLegend,
+    options.showDxcc, options.showContinents, options.showRarity,
+    options.gridPrecision, options.showUpdated
+  ].join(':');
+}
+
+async function readPrivateSettings() {
+  try { return JSON.parse(await fs.readFile(SETTINGS, 'utf8')); }
+  catch (error) { if (error?.code === 'ENOENT') return {}; throw error; }
+}
+
 async function image(options) {
   const stat = await fs.stat(SNAPSHOT);
-  const key = [options.projection, options.theme, options.width, options.showName, options.showStats, options.showLegend, options.showDxcc, options.showUpdated].join(':');
+  const key = keyFor(options);
   const old = cache.get(key), now = Date.now();
   if (old && old.mtimeMs === stat.mtimeMs && old.size === stat.size && (!old.earthFallback || now - old.createdAt < EARTH_FALLBACK_RETRY_MS)) return old;
 
-  const data = JSON.parse(await fs.readFile(SNAPSHOT, 'utf8'));
+  const [data, privateSettings] = await Promise.all([
+    fs.readFile(SNAPSHOT, 'utf8').then(JSON.parse),
+    readPrivateSettings()
+  ]);
   let body, earthFallback = false;
   if (options.theme === 'earth') {
     try {
       const texture = decodePng(await earthPng(), { maxPixels: 9_000_000 });
-      body = renderEarth(data, texture, options);
+      body = renderEarth(data, texture, options, privateSettings);
     } catch {
       earthFallback = true;
-      const fallback = renderStaticPng(data, world, { ...options, theme: 'clean' });
-      const dimensions = staticDimensions(options.width, 'earth');
-      body = resizePng(fallback, dimensions.width, dimensions.height);
+      const blank = blankFooterBase(data, options, 'clean');
+      const decorated = applyStaticInfo(blank, data, { ...options, showNasaCredit: false }, privateSettings, 'clean');
+      const dimensions = staticDimensions(options.width, 'earth', options.preset);
+      body = resizePng(decorated, dimensions.width, dimensions.height);
     }
   } else {
     const baseTheme = options.theme === 'amber' ? 'rough' : options.theme === 'ice' ? 'clean' : 'futuristic';
-    const base = renderStaticPng(data, world, { ...options, theme: baseTheme });
-    const transformed = transform(base, options.theme);
-    const dimensions = staticDimensions(options.width, options.theme);
-    body = resizePng(transformed, dimensions.width, dimensions.height);
+    const blank = blankFooterBase(data, options, baseTheme);
+    const transformed = transform(blank, options.theme);
+    const decorated = applyStaticInfo(transformed, data, options, privateSettings, options.theme);
+    const dimensions = staticDimensions(options.width, options.theme, options.preset);
+    body = resizePng(decorated, dimensions.width, dimensions.height);
   }
 
   const item = {
@@ -332,6 +375,7 @@ express.application.listen = function staticThemeListen(...args) {
       const item = await image(options);
       res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
       res.set('ETag', item.etag);
+      if (item.earthFallback) res.set('X-QSO-Trails-Earth-Fallback', '1');
       if (req.get('if-none-match') === item.etag) return res.status(304).end();
       return res.type('image/png').send(item.body);
     } catch (error) {

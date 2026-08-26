@@ -7,13 +7,10 @@ const express = require('express');
 const topojson = require('topojson-client');
 const worldAtlas = require('world-atlas/countries-50m.json');
 const { renderStaticPng } = require('./static-render');
-const { parseStaticWidth, staticDimensions, resizePng } = require('./static-size');
+const { applyStaticInfo } = require('./static-info');
+const { parseStaticPreset, parseStaticWidth, staticDimensions, resizePng } = require('./static-size');
 const { exactFile } = require('./safe-files');
 
-// Keep the LoTW snapshot layer aligned with server.js on a brand-new data volume.
-// server.js supplies these values through readJson(..., defaults) when settings.json
-// does not exist; the preload layer also reads settings directly, so expose the same
-// fallback without creating a settings file solely for the feature.
 const settingsFile = path.join(__dirname, 'data', 'settings.json');
 const settingsDefaults = {
   stationName: 'My Station',
@@ -62,20 +59,31 @@ function boolOption(value, fallback = true) {
 
 function imageOptions(query) {
   const requestedTheme = String(query.theme || '').toLowerCase();
+  const legacyDxcc = boolOption(query.dxcc);
   return {
     projection: query.projection === 'mercator' ? 'mercator' : 'globe',
     theme: STATIC_THEMES.has(requestedTheme) ? requestedTheme : 'retro',
+    preset: parseStaticPreset(query.size),
     width: parseStaticWidth(query.width),
     showName: boolOption(query.name),
     showStats: boolOption(query.stats),
+    showLotw: boolOption(query.lotw, false),
     showLegend: boolOption(query.legend),
-    showDxcc: boolOption(query.dxcc),
+    showDxcc: legacyDxcc,
+    showContinents: query.continents == null ? legacyDxcc : boolOption(query.continents),
+    showRarity: query.rarity == null ? legacyDxcc : boolOption(query.rarity),
+    gridPrecision: ['4', '6'].includes(String(query.grid)) ? String(query.grid) : 'none',
     showUpdated: boolOption(query.updated)
   };
 }
 
 function optionsKey(options) {
-  return [options.projection, options.theme, options.width, options.showName, options.showStats, options.showLegend, options.showDxcc, options.showUpdated].join(':');
+  return [
+    options.projection, options.theme, options.preset, options.width,
+    options.showName, options.showStats, options.showLotw, options.showLegend,
+    options.showDxcc, options.showContinents, options.showRarity,
+    options.gridPrecision, options.showUpdated
+  ].join(':');
 }
 
 function remember(key, value) {
@@ -97,10 +105,22 @@ async function staticImage(options) {
   const key = optionsKey(options);
   const existing = cache.get(key);
   if (existing && existing.mtimeMs === stat.mtimeMs && existing.size === stat.size) return existing;
-  const snapshot = JSON.parse(await fs.readFile(snapshotFile, 'utf8'));
-  const base = renderStaticPng(snapshot, world, options);
-  const dimensions = staticDimensions(options.width, options.theme);
-  const png = resizePng(base, dimensions.width, dimensions.height);
+  const [snapshot, privateSettings] = await Promise.all([
+    fs.readFile(snapshotFile, 'utf8').then(JSON.parse),
+    fs.readFile(settingsFile, 'utf8').then(JSON.parse)
+  ]);
+  const blank = renderStaticPng(snapshot, world, {
+    ...options,
+    showName: false,
+    showStats: false,
+    showLegend: false,
+    showDxcc: false,
+    showUpdated: false,
+    showNasaCredit: false
+  });
+  const decorated = applyStaticInfo(blank, snapshot, options, privateSettings, options.theme);
+  const dimensions = staticDimensions(options.width, options.theme, options.preset);
+  const png = resizePng(decorated, dimensions.width, dimensions.height);
   const value = {
     body: png,
     etag: `"${crypto.createHash('sha256').update(png).digest('base64url')}"`,
@@ -113,9 +133,6 @@ async function staticImage(options) {
 
 const originalListen = express.application.listen;
 express.application.listen = function staticPublishListen(...args) {
-  // Register the base renderer at listen time instead of globally intercepting
-  // app.get(). static-theme-pack.js is loaded after this module, so its expanded
-  // theme route is registered first and can call next() for legacy themes.
   this.get('/static/qrz.png', async (req, res, next) => {
     try {
       const rendered = await staticImage(imageOptions(req.query || {}));
