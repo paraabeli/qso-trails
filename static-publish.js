@@ -7,6 +7,7 @@ const express = require('express');
 const topojson = require('topojson-client');
 const worldAtlas = require('world-atlas/countries-50m.json');
 const { renderStaticPng } = require('./static-render');
+const { parseStaticWidth, staticDimensions, resizePng } = require('./static-size');
 const { exactFile } = require('./safe-files');
 
 // Keep the LoTW snapshot layer aligned with server.js on a brand-new data volume.
@@ -51,6 +52,8 @@ const snapshotFile = path.join(__dirname, 'data', 'public-snapshot.json');
 const world = topojson.feature(worldAtlas, worldAtlas.objects.countries);
 const cache = new Map();
 const STATIC_THEMES = new Set(['retro', 'clean', 'futuristic', 'rough']);
+const MAX_CACHE_BYTES = 64 * 1024 * 1024;
+let cacheBytes = 0;
 
 function boolOption(value, fallback = true) {
   if (value == null || value === '') return fallback;
@@ -62,6 +65,7 @@ function imageOptions(query) {
   return {
     projection: query.projection === 'mercator' ? 'mercator' : 'globe',
     theme: STATIC_THEMES.has(requestedTheme) ? requestedTheme : 'retro',
+    width: parseStaticWidth(query.width),
     showName: boolOption(query.name),
     showStats: boolOption(query.stats),
     showLegend: boolOption(query.legend),
@@ -71,7 +75,21 @@ function imageOptions(query) {
 }
 
 function optionsKey(options) {
-  return [options.projection, options.theme, options.showName, options.showStats, options.showLegend, options.showDxcc, options.showUpdated].join(':');
+  return [options.projection, options.theme, options.width, options.showName, options.showStats, options.showLegend, options.showDxcc, options.showUpdated].join(':');
+}
+
+function remember(key, value) {
+  const previous = cache.get(key);
+  if (previous) cacheBytes -= previous.body.length;
+  cache.set(key, value);
+  cacheBytes += value.body.length;
+  while (cache.size > 16 || cacheBytes > MAX_CACHE_BYTES) {
+    const oldestKey = cache.keys().next().value;
+    if (oldestKey === undefined) break;
+    const oldest = cache.get(oldestKey);
+    cache.delete(oldestKey);
+    cacheBytes -= oldest?.body?.length || 0;
+  }
 }
 
 async function staticImage(options) {
@@ -80,15 +98,16 @@ async function staticImage(options) {
   const existing = cache.get(key);
   if (existing && existing.mtimeMs === stat.mtimeMs && existing.size === stat.size) return existing;
   const snapshot = JSON.parse(await fs.readFile(snapshotFile, 'utf8'));
-  const png = renderStaticPng(snapshot, world, options);
+  const base = renderStaticPng(snapshot, world, options);
+  const dimensions = staticDimensions(options.width, options.theme);
+  const png = resizePng(base, dimensions.width, dimensions.height);
   const value = {
     body: png,
     etag: `"${crypto.createHash('sha256').update(png).digest('base64url')}"`,
     mtimeMs: stat.mtimeMs,
     size: stat.size
   };
-  cache.set(key, value);
-  if (cache.size > 64) cache.delete(cache.keys().next().value);
+  remember(key, value);
   return value;
 }
 
