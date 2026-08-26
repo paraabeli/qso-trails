@@ -3,11 +3,11 @@
   const $=id=>document.getElementById(id);
   const query=new URLSearchParams(location.search);
   const enabled=(name,fallback=true)=>{const value=query.get(name);return value==null?fallback:!['0','false','off','no'].includes(value.toLowerCase());};
-  const showName=enabled('name'),showStats=enabled('stats'),showLegend=enabled('legend'),showDxcc=enabled('dxcc'),showDetails=enabled('details'),showWebm=enabled('webm'),showReplayControls=enabled('replaycontrols');
+  const showName=enabled('name'),showStats=enabled('stats'),showLegend=enabled('legend'),showDxcc=enabled('dxcc'),showDetails=enabled('details'),showWebm=enabled('webm'),showReplayControls=enabled('replaycontrols'),showTools=enabled('tools');
   const filteredDays=Math.max(0,Math.min(3650,Number(query.get('days'))||0));
   const requestedBand=String(query.get('band')||'all').trim().toLowerCase();
   const earthMode=String(query.get('theme')||'').trim().toLowerCase()==='earth';
-  const canvas=$('c'),details=$('details'),dxcc=$('dxccSummary'),panel=$('dxccPanel'),grid=$('dxccGrid'),recordButton=$('recordButton'),downloadButton=$('downloadWebm'),replayBox=$('replay'),replayRange=$('replayRange'),replayButton=$('replayButton'),loopToggle=$('loopToggle'),liveToggle=$('liveToggle'),bandReplay=$('bandReplay');
+  const canvas=$('c'),details=$('details'),dxcc=$('dxccSummary'),panel=$('dxccPanel'),grid=$('dxccGrid'),recordButton=$('recordButton'),downloadButton=$('downloadWebm'),replayBox=$('replay'),replayRange=$('replayRange'),replayButton=$('replayButton'),loopToggle=$('loopToggle'),liveToggle=$('liveToggle'),bandReplay=$('bandReplay'),toolsBox=document.querySelector('.tools');
   if(!canvas||!recordButton||!downloadButton)return;
 
   if($('name'))$('name').hidden=!showName;
@@ -17,14 +17,18 @@
   const hint=document.querySelector('.hint');if(hint)hint.hidden=!showDetails;
   if(dxcc)dxcc.hidden=!showDxcc;
   if(panel)panel.hidden=!showDxcc;
-  recordButton.hidden=!showWebm;
+  if(toolsBox&&!showTools){toolsBox.hidden=true;toolsBox.style.display='none';}
+  recordButton.hidden=!showWebm||!showTools;
   downloadButton.hidden=true;
   if(replayBox&&!showReplayControls){replayBox.hidden=true;replayBox.style.display='none';}
   if(earthMode){
     const credit=document.createElement('div');
-    credit.id='nasaImageryCredit';credit.textContent='Imagery: NASA Earth Observatory · Blue Marble: Next Generation';
+    credit.id='nasaImageryCredit';credit.textContent='3D globe · NASA Blue Marble: Next Generation · checking texture…';
     credit.style.marginTop='6px';credit.style.fontSize='10px';credit.style.opacity='.82';credit.style.lineHeight='1.25';
     panel?.after(credit);
+    fetch(`/assets/earth-blue-marble.png?status=${Date.now()}`,{method:'HEAD',cache:'no-store'}).then(response=>{
+      credit.textContent=response.ok?'3D globe · Imagery: NASA Earth Observatory · Blue Marble: Next Generation':`3D globe · NASA imagery unavailable (${response.status}) · vector globe fallback active`;
+    }).catch(()=>{credit.textContent='3D globe · NASA imagery status unavailable · vector globe fallback may be active';});
   }
 
   let recorder=null,chunks=[],recordingBlob=null,recordingUrl='',completionWatch=null,statsTimer=null,bandTouched=false;
@@ -71,7 +75,7 @@
   const message=text=>{if(details&&!details.hidden)details.textContent=text;};
 
   recordButton.onclick=()=>{
-    if(!showWebm)return;
+    if(!showWebm||!showTools)return;
     if(recorder&&recorder.state==='recording'){stopRecording();return;}
     if(!canvas.captureStream||typeof MediaRecorder==='undefined'){message('WebM export is not supported by this browser.');return;}
     clearRecordingUrl();recordingBlob=null;chunks=[];downloadButton.hidden=true;
@@ -86,7 +90,7 @@
       recordingBlob=new Blob(chunks,{type:recorder.mimeType||'video/webm'});
       recordButton.textContent='Export WebM';canvas.classList.remove('recording');
       if(!recordingBlob.size){message('The browser created an empty WebM recording.');return;}
-      recordingUrl=URL.createObjectURL(recordingBlob);downloadButton.hidden=!showWebm;
+      recordingUrl=URL.createObjectURL(recordingBlob);downloadButton.hidden=!showWebm||!showTools;
       message(`Replay recording ready (${(recordingBlob.size/1024/1024).toFixed(1)} MB). Click Download WebM.`);
     };
     recorder.start(1000);canvas.classList.add('recording');recordButton.textContent='Stop recording';
@@ -97,7 +101,7 @@
   };
 
   downloadButton.onclick=async()=>{
-    if(!showWebm)return;
+    if(!showWebm||!showTools)return;
     if(!recordingBlob||!recordingBlob.size){message('No completed WebM recording is ready.');return;}
     const filename=`qso-trails-replay-${new Date().toISOString().replace(/[:.]/g,'-')}.webm`;
     if('showSaveFilePicker' in window){
