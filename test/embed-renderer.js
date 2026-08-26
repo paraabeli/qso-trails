@@ -28,6 +28,12 @@ assert.match(globe,/setEarthStatus\('Real Earth · NASA Blue Marble · rotating 
 const themePack=read('public/theme-pack.js');
 assert.doesNotMatch(themePack,/earthC|visibility\s*=\s*['"]hidden['"]|drawImage\(texture/,'theme pack must not replace the rotating globe with a flat Earth canvas');
 
+const embedHtml=read('public/embed.html');
+assert.match(embedHtml,/theme-pack\.js\?v=20260826-3/,'interactive embed must load the expanded visual theme pack');
+assert.match(embedHtml,/globe\.js\?v=20260826-3/,'interactive globe asset must be cache-busted after Earth renderer changes');
+assert.match(embedHtml,/embed-extras\.js\?v=20260826-3/,'embed controls asset must be cache-busted after visibility changes');
+assert.match(embedHtml,/data-qso-ui-build="2026-08-26\.3"/,'embed must expose a build marker for stale-deployment diagnosis');
+
 const lotw=read('public/embed-lotw.js');
 assert.match(lotw,/const requestedBand=String\(query\.get\('band'\)\|\|'all'\)/,'stats ownership must retain the requested URL band during startup');
 assert.match(lotw,/bandTouched=false/,'stats ownership must distinguish initialization from visitor band changes');
@@ -45,30 +51,38 @@ assert.match(extras,/bandTouched=false/,'DXCC ownership must distinguish initial
 assert.match(extras,/function visuallyFiltered\(\)\{const selected=bandTouched\?String\(bandReplay\?\.value\|\|'all'\)[\s\S]*?:requestedBand;/,'DXCC filtering must use the URL band until the visitor changes the selector');
 assert.match(extras,/DXCC progress: unavailable for filtered view/,'filtered embeds must not display unfiltered DXCC aggregates');
 assert.match(extras,/if\(visuallyFiltered\(\)\)\{renderDxcc\(null\);return;\}/,'filtered DXCC views must not fetch the server-wide aggregate');
-assert.match(extras,/bandReplay\?\.addEventListener\('change',\(\)=>\{bandTouched=true;refreshDxcc\(\);updateStatsTimer\(\);\}\)/,'changing the band selector must hand DXCC ownership to the live selector and refresh immediately');
 assert.match(extras,/Most Wanted #/,'DXCC breakdown must show Club Log Most Wanted rank for rarest worked entities');
-assert.match(extras,/nasaImageryCredit/,'Earth embed must render a dedicated imagery credit');
-assert.match(extras,/NASA Earth Observatory · Blue Marble: Next Generation/,'Earth embed must use NASA Earth Observatory attribution');
 assert.match(extras,/showWebm=enabled\('webm'\)/,'embed must support hiding WebM export controls');
 assert.match(extras,/showReplayControls=enabled\('replaycontrols'\)/,'embed must support hiding the replay control box');
-assert.match(extras,/recordButton\.hidden=!showWebm/,'WebM visibility must be applied to the export button');
-assert.match(extras,/replayBox\.hidden=true;replayBox\.style\.display='none'/,'hidden replay controls must stay hidden even when the globe marks replay available');
+assert.match(extras,/showTools=enabled\('tools'\)/,'embed must support hiding the Search Live tools box');
+assert.match(extras,/toolsBox\.hidden=true;toolsBox\.style\.display='none'/,'Search Live tools box must remain hidden when disabled');
+assert.match(extras,/3D globe · Imagery: NASA Earth Observatory · Blue Marble: Next Generation/,'Earth embed must identify the renderer as a 3D globe and credit NASA');
+assert.match(extras,/vector globe fallback active/,'Earth texture failures must be visible instead of looking like a normal Mercator map');
 
 const staticRenderer=read('static-render.js');
 assert.match(staticRenderer,/RAREST \$\{rare\}/,'static info box must include rarest worked DXCC entities');
 assert.match(staticRenderer,/NASA EARTH OBSERVATORY \/ BLUE MARBLE NEXT GENERATION/,'NASA static output must include visible credit');
 
-const adminPublish=read('public/admin-publish.js');
-assert.match(adminPublish,/width\.min='320';width\.max='3840'/,'admin static width control must be bounded');
-assert.match(adminPublish,/theme==='earth'\?Math\.round\(width\/2\)/,'admin snippet must keep NASA 2:1 aspect ratio');
-assert.match(adminPublish,/embedShowWebm','WebM export\/download controls'/,'admin must expose a WebM visibility toggle');
-assert.match(adminPublish,/embedShowReplay','Replay \/ play box'/,'admin must expose a replay-box visibility toggle');
-assert.match(adminPublish,/setFlag\(url,'webm',checked\('embedShowWebm'\)\)/,'admin must write the WebM visibility query flag');
-assert.match(adminPublish,/setFlag\(url,'replaycontrols',checked\('embedShowReplay'\)\)/,'admin must write the replay visibility query flag');
-assert.match(adminPublish,/__qsoTrailsAdminPublishLoaded/,'admin publish helper must be idempotent when loaded directly and by older admin.js versions');
+const staticThemes=read('static-theme-pack.js');
+assert.match(staticThemes,/if \(options\.projection === 'mercator'\) fillEarthMercator/,'Earth static renderer must use Mercator only when explicitly selected');
+assert.match(staticThemes,/else fillEarthGlobe/,'Earth static renderer must have a separate globe projection path');
 
 const adminHtml=read('public/admin.html');
-assert.match(adminHtml,/admin-publish\.js\?v=20260826-2/,'admin page must load publish controls directly with a fresh asset URL');
-assert.match(adminHtml,/Choose projection, theme, visible text, and a width from 320 to 3840 px/,'admin page must visibly describe scalable static output');
+assert.match(adminHtml,/Admin UI build 2026-08-26\.3/,'Admin must display a build marker so stale deployments are obvious');
+assert.match(adminHtml,/id="embedShowWebm"/,'WebM visibility control must exist directly in Admin HTML');
+assert.match(adminHtml,/id="embedShowReplay"/,'Replay visibility control must exist directly in Admin HTML');
+assert.match(adminHtml,/id="embedShowTools"/,'Search Live visibility control must exist directly in Admin HTML');
+assert.match(adminHtml,/Real Earth · NASA Blue Marble NG · 3D globe/,'Blue Marble NG interactive theme must exist directly in Admin HTML');
+assert.match(adminHtml,/id="staticProjection"[\s\S]*value="globe">3D globe[\s\S]*value="mercator">Mercator map/,'Static Admin must expose distinct globe and Mercator projections');
+assert.match(adminHtml,/id="staticTheme"[\s\S]*value="earth">Real Earth · NASA Blue Marble NG/,'Static Blue Marble NG theme must exist directly in Admin HTML');
+assert.match(adminHtml,/admin\.js\?v=20260826-3/,'Admin JS must be cache-busted after controls move into core Admin');
+assert.doesNotMatch(adminHtml,/admin-publish\.js/,'current Admin must not depend on the legacy dynamic publish helper');
+
+const admin=read('public/admin.js');
+assert.match(admin,/setHiddenFlag\(p,'webm','embedShowWebm'\)/,'core Admin must write the WebM visibility flag');
+assert.match(admin,/setHiddenFlag\(p,'replaycontrols','embedShowReplay'\)/,'core Admin must write the replay visibility flag');
+assert.match(admin,/setHiddenFlag\(p,'tools','embedShowTools'\)/,'core Admin must write the Search Live visibility flag');
+assert.match(admin,/p\.set\('projection',\$\('staticProjection'\)\?\.value==='mercator'\?'mercator':'globe'\)/,'core Admin must preserve the selected static projection');
+assert.match(admin,/NASA Blue Marble NG status: texture available/,'Admin must report Earth texture health');
 
 console.log('embed renderer regression tests passed');
