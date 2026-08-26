@@ -80,14 +80,19 @@ jobs:
           grep -qi '^cache-control: no-store' public.headers
           test "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/assets/admin.html)" = "404"
 
-          docker exec qso-trails-ci grep -Fq 'admin.js?v=20260823-1' /app/public/admin.html
-          docker exec qso-trails-ci grep -Fq "['midnight','Midnight']" /app/public/admin-publish.js
-          curl -fsS -D admin-js.headers 'http://127.0.0.1:3000/assets/admin.js?v=20260823-1' -o /dev/null
-          curl -fsS -D admin-publish.headers 'http://127.0.0.1:3000/assets/admin-publish.js?v=20260823-1' -o /dev/null
+          docker exec qso-trails-ci grep -Fq 'Admin UI build 2026-08-26.3' /app/public/admin.html
+          docker exec qso-trails-ci grep -Fq 'id="embedShowWebm"' /app/public/admin.html
+          docker exec qso-trails-ci grep -Fq 'id="embedShowReplay"' /app/public/admin.html
+          docker exec qso-trails-ci grep -Fq 'id="embedShowTools"' /app/public/admin.html
+          docker exec qso-trails-ci grep -Fq 'Real Earth · NASA Blue Marble NG · 3D globe' /app/public/admin.html
+          docker exec qso-trails-ci grep -Fq 'admin.js?v=20260826-3' /app/public/admin.html
+          docker exec qso-trails-ci grep -Fq 'theme-pack.js?v=20260826-3' /app/public/embed.html
+          docker exec qso-trails-ci grep -Fq 'globe.js?v=20260826-3' /app/public/embed.html
+          curl -fsS -D admin-js.headers 'http://127.0.0.1:3000/assets/admin.js?v=20260826-3' -o /dev/null
           grep -qi '^cache-control: no-store' admin-js.headers
-          grep -qi '^cache-control: no-store' admin-publish.headers
 
           docker exec qso-trails-ci node -e "const fs=require('fs'),{encodePng}=require('/app/png-codec');const w=4096,h=2048,p=Buffer.alloc(w*h*4);for(let i=0;i<p.length;i+=4){p[i]=20;p[i+1]=70;p[i+2]=130;p[i+3]=255}fs.writeFileSync('/app/data/earth-blue-marble-ng-200412.png',encodePng(w,h,p))"
+          curl -fsSI 'http://127.0.0.1:3000/assets/earth-blue-marble.png?check=1' | grep -qi '^content-type: image/png'
           curl -fsS http://127.0.0.1:3000/assets/earth-blue-marble.png -o earth.png
           test "$(xxd -p -l 8 earth.png)" = "89504e470d0a1a0a"
 
@@ -110,6 +115,9 @@ jobs:
           done
           test "$(sha256sum qrz-earth-mercator.png | cut -d' ' -f1)" != "$(sha256sum qrz-clean-mercator.png | cut -d' ' -f1)"
 
+          curl -fsS 'http://127.0.0.1:3000/static/qrz.png?projection=globe&theme=earth&name=0&stats=0&legend=0&dxcc=0&updated=0' -o qrz-earth-globe-plain.png
+          test "$(sha256sum qrz-earth-globe-plain.png | cut -d' ' -f1)" != "$(sha256sum qrz-earth-mercator.png | cut -d' ' -f1)"
+
           curl -fsS 'http://127.0.0.1:3000/static/qrz.png?projection=globe&theme=earth&width=800' -o qrz-earth-sized.png
           curl -fsS 'http://127.0.0.1:3000/static/qrz.png?projection=globe&theme=retro&width=800' -o qrz-retro-sized.png
           node - <<'NODE'
@@ -121,8 +129,11 @@ jobs:
           if(retro.width!==800||retro.height!==625)throw new Error('Legacy static size/aspect ratio mismatch');
           NODE
 
-          curl -fsS 'http://127.0.0.1:3000/embed?theme=earth' | grep -q '/assets/dom-safety.js'
-          test "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/assets/theme-pack.js)" = "200"
+          curl -fsS 'http://127.0.0.1:3000/embed?theme=earth' -o earth-embed.html
+          grep -Fq '/assets/theme-pack.js?v=20260826-3' earth-embed.html
+          grep -Fq '/assets/globe.js?v=20260826-3' earth-embed.html
+          grep -Fq '/assets/embed-extras.js?v=20260826-3' earth-embed.html
+          test "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/assets/theme-pack.js?v=20260826-3)" = "200"
           test "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/assets/admin-theme-pack.js)" = "200"
 
       - name: Clean up smoke container
