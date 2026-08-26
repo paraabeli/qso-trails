@@ -17,6 +17,8 @@ COPY privacy-guard.js ./
 COPY network-guard.js ./
 COPY privacy-defaults.js ./
 COPY png-codec.js ./
+COPY dxcc-rarity.js ./
+COPY static-size.js ./
 COPY earth-texture.js ./
 COPY static-render.js ./
 COPY static-publish.js ./
