@@ -4,6 +4,7 @@
   const query=new URLSearchParams(location.search);
   const enabled=(name,fallback=true)=>{const value=query.get(name);return value==null?fallback:!['0','false','off','no'].includes(value.toLowerCase());};
   const showName=enabled('name'),showStats=enabled('stats'),showLegend=enabled('legend'),showDxcc=enabled('dxcc'),showDetails=enabled('details'),showWebm=enabled('webm'),showReplayControls=enabled('replaycontrols'),showTools=enabled('tools');
+  const showDxccCont=enabled('dxcccont'),showDxccTop=enabled('dxcctop'),showDxccRarity=enabled('dxccrare'),showDxccBand=enabled('dxccband'),showDxccMode=enabled('dxccmode'),showDxccFar=enabled('dxccfar'),showDxccNewest=enabled('dxccnewest');
   const filteredDays=Math.max(0,Math.min(3650,Number(query.get('days'))||0));
   const requestedBand=String(query.get('band')||'all').trim().toLowerCase();
   const earthMode=String(query.get('theme')||'').trim().toLowerCase()==='earth';
@@ -23,12 +24,12 @@
   if(replayBox&&!showReplayControls){replayBox.hidden=true;replayBox.style.display='none';}
   if(earthMode){
     const credit=document.createElement('div');
-    credit.id='nasaImageryCredit';credit.textContent='3D globe · NASA Blue Marble: Next Generation · checking texture…';
+    credit.id='nasaImageryCredit';credit.textContent='3D globe · NASA Blue Marble: Next Generation · checking local texture…';
     credit.style.marginTop='6px';credit.style.fontSize='10px';credit.style.opacity='.82';credit.style.lineHeight='1.25';
     panel?.after(credit);
-    fetch(`/assets/earth-blue-marble.png?status=${Date.now()}`,{method:'HEAD',cache:'no-store'}).then(response=>{
+    fetch('/assets/earth-blue-marble.png',{method:'HEAD',cache:'force-cache'}).then(response=>{
       credit.textContent=response.ok?'3D globe · Imagery: NASA Earth Observatory · Blue Marble: Next Generation':`3D globe · NASA imagery unavailable (${response.status}) · vector globe fallback active`;
-    }).catch(()=>{credit.textContent='3D globe · NASA imagery status unavailable · vector globe fallback may be active';});
+    }).catch(()=>{credit.textContent='3D globe · local NASA imagery unavailable · vector globe fallback active';});
   }
 
   let recorder=null,chunks=[],recordingBlob=null,recordingUrl='',completionWatch=null,statsTimer=null,bandTouched=false;
@@ -47,16 +48,16 @@
     if(!stats){dxcc.textContent='DXCC progress: hidden by admin privacy settings';panel.hidden=true;return;}
     if(!stats.metadataAvailable){dxcc.textContent='DXCC progress: metadata unavailable · full resync or ADIF re-upload may be required';panel.hidden=true;return;}
     dxcc.textContent=`DXCC progress: ${Number(stats.entities||0).toLocaleString()} entities · ${Number(stats.countries||0).toLocaleString()} countries · ${Number(stats.continents||0)} continents`;
-    panel.hidden=false;
-    const byCont=(stats.byContinent||[]).map(x=>`${x.name}: ${Number(x.qsos||0).toLocaleString()} QSOs`);
-    const top=(stats.topDxcc||[]).map(x=>`${labelEntity(x)}: ${Number(x.qsos||0).toLocaleString()} QSOs`);
-    const rare=(stats.rarestWorked||[]).map(x=>`Most Wanted #${Number(x.rank)} · ${labelEntity(x)} · ${Number(x.qsos||0).toLocaleString()} QSOs`);
-    const rarityTitle=stats.raritySource?.name?`Rarest worked · ${stats.raritySource.name}${stats.raritySource.stale?' (cached)':''}`:'Rarest worked';
-    const bands=(stats.byBand||[]).slice(0,12).map(x=>`${x.band}: ${Number(x.entities||0)} entities · ${Number(x.qsos||0).toLocaleString()} QSOs`);
-    const modes=Array.isArray(stats.byMode)?stats.byMode.slice(0,12).map(x=>`${x.mode}: ${Number(x.entities||0)} entities · ${Number(x.qsos||0).toLocaleString()} QSOs`):['Hidden because mode is not public'];
-    const far=stats.farthest?[`${labelEntity(stats.farthest)} · ${Number(stats.farthest.distanceKm||0).toLocaleString()} km`]:[];
-    const newest=stats.newestFirstWorked?[`${labelEntity(stats.newestFirstWorked)} · ${stats.newestFirstWorked.date}`]:['Hidden because dates are not public'];
-    grid.append(makeSection('By continent',byCont),makeSection('Top entities',top),makeSection(rarityTitle,rare),makeSection('By band',bands),makeSection('By mode',modes),makeSection('Most distant entity',far),makeSection('Newest first-worked',newest));
+    const sections=[];
+    if(showDxccCont){const byCont=(stats.byContinent||[]).map(x=>`${x.name}: ${Number(x.qsos||0).toLocaleString()} QSOs`);sections.push(makeSection('By continent',byCont));}
+    if(showDxccTop){const top=(stats.topDxcc||[]).map(x=>`${labelEntity(x)}: ${Number(x.qsos||0).toLocaleString()} QSOs`);sections.push(makeSection('Top entities',top));}
+    if(showDxccRarity){const rare=(stats.rarestWorked||[]).map(x=>`Most Wanted #${Number(x.rank)} · ${labelEntity(x)} · ${Number(x.qsos||0).toLocaleString()} QSOs`),rarityTitle=stats.raritySource?.name?`Rarest worked · ${stats.raritySource.name}${stats.raritySource.stale?' (cached)':''}`:'Rarest worked';sections.push(makeSection(rarityTitle,rare));}
+    if(showDxccBand){const bands=(stats.byBand||[]).slice(0,12).map(x=>`${x.band}: ${Number(x.entities||0)} entities · ${Number(x.qsos||0).toLocaleString()} QSOs`);sections.push(makeSection('By band',bands));}
+    if(showDxccMode){const modes=Array.isArray(stats.byMode)?stats.byMode.slice(0,12).map(x=>`${x.mode}: ${Number(x.entities||0)} entities · ${Number(x.qsos||0).toLocaleString()} QSOs`):['Hidden because mode is not public'];sections.push(makeSection('By mode',modes));}
+    if(showDxccFar){const far=stats.farthest?[`${labelEntity(stats.farthest)} · ${Number(stats.farthest.distanceKm||0).toLocaleString()} km`]:[];sections.push(makeSection('Most distant entity',far));}
+    if(showDxccNewest){const newest=stats.newestFirstWorked?[`${labelEntity(stats.newestFirstWorked)} · ${stats.newestFirstWorked.date}`]:['Hidden because dates are not public'];sections.push(makeSection('Newest first-worked',newest));}
+    panel.hidden=sections.length===0;
+    if(sections.length)grid.replaceChildren(...sections);
   }
 
   async function refreshDxcc(){
