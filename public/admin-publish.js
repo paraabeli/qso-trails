@@ -1,7 +1,7 @@
 'use strict';
 (()=>{
   const byId=id=>document.getElementById(id);
-  const expandedThemes=[['midnight','Midnight'],['aurora','Aurora'],['amber','Amber'],['mono','Monochrome'],['ice','Ice'],['earth','Real Earth · NASA Blue Marble']];
+  const expandedThemes=[['midnight','Midnight'],['aurora','Aurora'],['amber','Amber'],['mono','Monochrome'],['ice','Ice'],['earth','Real Earth · NASA Blue Marble NG']];
   const staticThemes=new Set(['retro','clean','futuristic','rough',...expandedThemes.map(([value])=>value)]);
   const embedPreviewParams=new Set(['days','grayline','theme','mode','opacity','replay','loop','follow','timing','fade','band','live','name','stats','legend','dxcc','details']);
   const addThemeOptions=select=>{if(!select)return;const existing=new Set([...select.options].map(option=>option.value));for(const[value,label]of expandedThemes)if(!existing.has(value))select.append(new Option(label,value));};
@@ -26,14 +26,18 @@
     const projection=document.createElement('select');projection.id='staticProjection';projection.replaceChildren(new Option('3D globe','globe'),new Option('Mercator map','mercator'));projectionLabel.append(projection);
     const themeLabel=document.createElement('label');themeLabel.textContent='Static theme';
     const theme=document.createElement('select');theme.id='staticTheme';theme.replaceChildren(new Option('Retro','retro'),new Option('Clean','clean'),new Option('Futuristic','futuristic'),new Option('Rough / field-map','rough'));addThemeOptions(theme);themeLabel.append(theme);
-    box.append(projectionLabel,themeLabel,makeHeading('Static visible text'),makeToggle('staticShowName','Station label'),makeToggle('staticShowStats','QSO count'),makeToggle('staticShowLegend','Band legend'),makeToggle('staticShowDxcc','DXCC summary'),makeToggle('staticShowUpdated','Generated timestamp'));
-    const note=document.createElement('small');note.textContent='Theme and projection are visual-only. Real Earth uses a locally cached NASA Blue Marble texture; visitor browsers do not contact NASA. The PNG still uses only the sanitized public snapshot.';box.append(note);
+    const widthLabel=document.createElement('label');widthLabel.textContent='Static width (px)';
+    const width=document.createElement('input');width.id='staticWidth';width.type='number';width.min='320';width.max='3840';width.step='80';width.value='640';width.inputMode='numeric';widthLabel.append(width);
+    box.append(projectionLabel,themeLabel,widthLabel,makeHeading('Static visible text'),makeToggle('staticShowName','Station label'),makeToggle('staticShowStats','QSO count'),makeToggle('staticShowLegend','Band legend'),makeToggle('staticShowDxcc','DXCC summary'),makeToggle('staticShowUpdated','Generated timestamp'));
+    const note=document.createElement('small');note.textContent='Width is limited to 320–3840 px. NASA Blue Marble NG exports keep the source 2:1 aspect ratio; other themes keep the existing QSO Trails card ratio. NASA imagery is cached server-side and credited in every Earth image.';box.append(note);
     staticPreview.before(box);
   }
 
   const checked=id=>byId(id)?.checked!==false;
   const setFlag=(url,name,on)=>{if(on)url.searchParams.delete(name);else url.searchParams.set(name,'0');};
   const staticTheme=()=>staticThemes.has(byId('staticTheme')?.value)?byId('staticTheme').value:'retro';
+  const staticWidth=()=>Math.max(320,Math.min(3840,Math.round(Number(byId('staticWidth')?.value)||640)));
+  const staticHeight=(width,theme)=>theme==='earth'?Math.round(width/2):Math.round(width*500/640);
   let rewritingIframe=false,rewritingStatic=false,publicOrigin='';
 
   function rememberPublicOrigin(){
@@ -65,18 +69,20 @@
     const url=new URL('/static/qrz.png',rememberPublicOrigin());
     url.searchParams.set('projection',byId('staticProjection')?.value==='mercator'?'mercator':'globe');
     url.searchParams.set('theme',staticTheme());
+    url.searchParams.set('width',String(staticWidth()));
     setFlag(url,'name',checked('staticShowName'));setFlag(url,'stats',checked('staticShowStats'));setFlag(url,'legend',checked('staticShowLegend'));setFlag(url,'dxcc',checked('staticShowDxcc'));setFlag(url,'updated',checked('staticShowUpdated'));
     return url;
   }
 
   function applyStaticControls(){
     if(rewritingStatic||!staticPreview)return;
-    const url=staticUrl(),preview=new URL('/static/qrz.png',location.origin);preview.searchParams.set('projection',byId('staticProjection')?.value==='mercator'?'mercator':'globe');preview.searchParams.set('theme',staticTheme());setFlag(preview,'name',checked('staticShowName'));setFlag(preview,'stats',checked('staticShowStats'));setFlag(preview,'legend',checked('staticShowLegend'));setFlag(preview,'dxcc',checked('staticShowDxcc'));setFlag(preview,'updated',checked('staticShowUpdated'));preview.searchParams.set('preview',String(Date.now()));staticPreview.src=preview.pathname+preview.search;
-    const snippet=byId('staticSnippet');if(snippet){const imageUrl=url.toString(),embedUrl=new URL('/embed',rememberPublicOrigin()).toString();const next=`Static image URL:\n${imageUrl}\n\nLinked image:\n<a href="${embedUrl}" target="_blank" rel="noopener">\n  <img src="${imageUrl}" width="640" height="500" alt="QSO Trails map">\n</a>`;if(snippet.textContent!==next){rewritingStatic=true;snippet.textContent=next;rewritingStatic=false;}}
+    const url=staticUrl(),theme=staticTheme(),width=staticWidth(),height=staticHeight(width,theme),previewWidth=Math.min(width,1024),preview=new URL('/static/qrz.png',location.origin);
+    preview.searchParams.set('projection',byId('staticProjection')?.value==='mercator'?'mercator':'globe');preview.searchParams.set('theme',theme);preview.searchParams.set('width',String(previewWidth));setFlag(preview,'name',checked('staticShowName'));setFlag(preview,'stats',checked('staticShowStats'));setFlag(preview,'legend',checked('staticShowLegend'));setFlag(preview,'dxcc',checked('staticShowDxcc'));setFlag(preview,'updated',checked('staticShowUpdated'));preview.searchParams.set('preview',String(Date.now()));staticPreview.src=preview.pathname+preview.search;
+    const snippet=byId('staticSnippet');if(snippet){const imageUrl=url.toString(),embedUrl=new URL('/embed',rememberPublicOrigin()).toString();const next=`Static image URL:\n${imageUrl}\n\nLinked image:\n<a href="${embedUrl}" target="_blank" rel="noopener">\n  <img src="${imageUrl}" width="${width}" height="${height}" alt="QSO Trails map">\n</a>`;if(snippet.textContent!==next){rewritingStatic=true;snippet.textContent=next;rewritingStatic=false;}}
   }
 
   for(const id of ['embedShowName','embedShowStats','embedShowLegend','embedShowDxcc','embedShowDetails'])byId(id)?.addEventListener('change',applyEmbedControls);
-  for(const id of ['staticProjection','staticTheme','staticShowName','staticShowStats','staticShowLegend','staticShowDxcc','staticShowUpdated'])byId(id)?.addEventListener('change',applyStaticControls);
+  for(const id of ['staticProjection','staticTheme','staticWidth','staticShowName','staticShowStats','staticShowLegend','staticShowDxcc','staticShowUpdated'])byId(id)?.addEventListener('change',applyStaticControls);
 
   if(iframePre)new MutationObserver(()=>queueMicrotask(()=>{rememberPublicOrigin();applyEmbedControls();})).observe(iframePre,{childList:true,characterData:true,subtree:true});
   const staticSnippet=byId('staticSnippet');if(staticSnippet)new MutationObserver(()=>queueMicrotask(()=>{rememberPublicOrigin();applyStaticControls();})).observe(staticSnippet,{childList:true,characterData:true,subtree:true});
