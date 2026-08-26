@@ -1,6 +1,5 @@
 'use strict';
 (()=>{
-  const theme=document.createElement('script');theme.src='/assets/theme-pack.js';theme.async=true;document.head.append(theme);
   const el=document.getElementById('stats');
   if(!el)return;
   const query=new URLSearchParams(location.search);
@@ -9,7 +8,7 @@
   const requestedBand=String(query.get('band')||'all').trim().toLowerCase();
   let desired='',observer=null,bandTouched=false;
   function visuallyFiltered(){const selected=bandTouched?String(bandReplay?.value||'all').trim().toLowerCase():requestedBand;return selected!=='all'||filteredDays>0;}
-  function label(data){if(data?.settings?.showStats===false)return '';const mode=data?.settings?.embedCount||'both',qso=Number(data?.qsoCount||0).toLocaleString(),lotw=Number(data?.lotwCount??data?.qsoCount??0).toLocaleString();if(mode==='qso')return `${qso} QSOs`;if(mode==='lotw')return `${lotw} LoTW confirmed`;return `${qso} QSOs · ${lotw} LoTW confirmed`}
+  function label(data){if(data?.settings?.showStats===false)return '';const mode=data?.settings?.embedCount||'both',qso=Number(data?.qsoCount||0).toLocaleString(),lotw=Number(data?.lotwCount??data?.qsoCount??0).toLocaleString();if(mode==='qso')return `${qso} QSOs`;if(mode==='lotw')return `${lotw} LoTW confirmed`;return `${qso} QSOs · ${lotw} LoTW confirmed`;}
   function syncObserver(){
     if(visuallyFiltered()){
       if(observer){observer.disconnect();observer=null;}
