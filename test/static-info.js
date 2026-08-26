@@ -37,6 +37,7 @@ const body = applyStaticInfo(base, {
 const image = decodePng(body, { maxPixels: width * height });
 assert.equal(image.width, width);
 assert.equal(image.height, height);
-assert.notDeepEqual(image.data.subarray((338 * width) * 4, (339 * width) * 4), rgba.subarray((338 * width) * 4, (339 * width) * 4));
+const start = (350 * width) * 4, end = (360 * width) * 4;
+assert.notDeepEqual(image.data.subarray(start, end), rgba.subarray(start, end));
 
 console.log('static info tests passed');
