@@ -46,5 +46,16 @@ assert.match(extras,/function visuallyFiltered\(\)\{const selected=bandTouched\?
 assert.match(extras,/DXCC progress: unavailable for filtered view/,'filtered embeds must not display unfiltered DXCC aggregates');
 assert.match(extras,/if\(visuallyFiltered\(\)\)\{renderDxcc\(null\);return;\}/,'filtered DXCC views must not fetch the server-wide aggregate');
 assert.match(extras,/bandReplay\?\.addEventListener\('change',\(\)=>\{bandTouched=true;refreshDxcc\(\);updateStatsTimer\(\);\}\)/,'changing the band selector must hand DXCC ownership to the live selector and refresh immediately');
+assert.match(extras,/Most Wanted #/,'DXCC breakdown must show Club Log Most Wanted rank for rarest worked entities');
+assert.match(extras,/nasaImageryCredit/,'Earth embed must render a dedicated imagery credit');
+assert.match(extras,/NASA Earth Observatory · Blue Marble: Next Generation/,'Earth embed must use NASA Earth Observatory attribution');
+
+const staticRenderer=read('static-render.js');
+assert.match(staticRenderer,/RAREST \$\{rare\}/,'static info box must include rarest worked DXCC entities');
+assert.match(staticRenderer,/NASA EARTH OBSERVATORY \/ BLUE MARBLE NEXT GENERATION/,'NASA static output must include visible credit');
+
+const adminPublish=read('public/admin-publish.js');
+assert.match(adminPublish,/width\.min='320';width\.max='3840'/,'admin static width control must be bounded');
+assert.match(adminPublish,/theme==='earth'\?Math\.round\(width\/2\)/,'admin snippet must keep NASA 2:1 aspect ratio');
 
 console.log('embed renderer regression tests passed');

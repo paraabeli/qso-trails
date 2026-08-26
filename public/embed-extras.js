@@ -6,6 +6,7 @@
   const showName=enabled('name'),showStats=enabled('stats'),showLegend=enabled('legend'),showDxcc=enabled('dxcc'),showDetails=enabled('details');
   const filteredDays=Math.max(0,Math.min(3650,Number(query.get('days'))||0));
   const requestedBand=String(query.get('band')||'all').trim().toLowerCase();
+  const earthMode=String(query.get('theme')||'').trim().toLowerCase()==='earth';
   const canvas=$('c'),details=$('details'),dxcc=$('dxccSummary'),panel=$('dxccPanel'),grid=$('dxccGrid'),recordButton=$('recordButton'),downloadButton=$('downloadWebm'),replayRange=$('replayRange'),replayButton=$('replayButton'),loopToggle=$('loopToggle'),liveToggle=$('liveToggle'),bandReplay=$('bandReplay');
   if(!canvas||!recordButton||!downloadButton)return;
 
@@ -16,6 +17,12 @@
   const hint=document.querySelector('.hint');if(hint)hint.hidden=!showDetails;
   if(dxcc)dxcc.hidden=!showDxcc;
   if(panel)panel.hidden=!showDxcc;
+  if(earthMode){
+    const credit=document.createElement('div');
+    credit.id='nasaImageryCredit';credit.textContent='Imagery: NASA Earth Observatory · Blue Marble: Next Generation';
+    credit.style.marginTop='6px';credit.style.fontSize='10px';credit.style.opacity='.82';credit.style.lineHeight='1.25';
+    panel?.after(credit);
+  }
 
   let recorder=null,chunks=[],recordingBlob=null,recordingUrl='',completionWatch=null,statsTimer=null,bandTouched=false;
 
@@ -36,11 +43,13 @@
     panel.hidden=false;
     const byCont=(stats.byContinent||[]).map(x=>`${x.name}: ${Number(x.qsos||0).toLocaleString()} QSOs`);
     const top=(stats.topDxcc||[]).map(x=>`${labelEntity(x)}: ${Number(x.qsos||0).toLocaleString()} QSOs`);
+    const rare=(stats.rarestWorked||[]).map(x=>`Most Wanted #${Number(x.rank)} · ${labelEntity(x)} · ${Number(x.qsos||0).toLocaleString()} QSOs`);
+    const rarityTitle=stats.raritySource?.name?`Rarest worked · ${stats.raritySource.name}${stats.raritySource.stale?' (cached)':''}`:'Rarest worked';
     const bands=(stats.byBand||[]).slice(0,12).map(x=>`${x.band}: ${Number(x.entities||0)} entities · ${Number(x.qsos||0).toLocaleString()} QSOs`);
     const modes=Array.isArray(stats.byMode)?stats.byMode.slice(0,12).map(x=>`${x.mode}: ${Number(x.entities||0)} entities · ${Number(x.qsos||0).toLocaleString()} QSOs`):['Hidden because mode is not public'];
     const far=stats.farthest?[`${labelEntity(stats.farthest)} · ${Number(stats.farthest.distanceKm||0).toLocaleString()} km`]:[];
     const newest=stats.newestFirstWorked?[`${labelEntity(stats.newestFirstWorked)} · ${stats.newestFirstWorked.date}`]:['Hidden because dates are not public'];
-    grid.append(makeSection('By continent',byCont),makeSection('Top entities',top),makeSection('By band',bands),makeSection('By mode',modes),makeSection('Most distant entity',far),makeSection('Newest first-worked',newest));
+    grid.append(makeSection('By continent',byCont),makeSection('Top entities',top),makeSection(rarityTitle,rare),makeSection('By band',bands),makeSection('By mode',modes),makeSection('Most distant entity',far),makeSection('Newest first-worked',newest));
   }
 
   async function refreshDxcc(){

@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const express = require('express');
 const { exactOrAtomicTemp } = require('./safe-files');
 const { distanceKm, maidenheadToLatLon, positionAtPrecision, publicHome, qsoSortKey, qsoTimestamp, sanitizePublicQso } = require('./qso-helpers');
+const { getMostWanted, topRarestWorked } = require('./dxcc-rarity');
 
 const DATA = path.join(__dirname, 'data');
 const QSO_FILE = path.join(DATA, 'qsos.json');
@@ -115,7 +116,7 @@ async function refreshLotwConfirmations(qsoUrl, requestInit, full) {
   }
 }
 
-function publicDxccStats(qsos, settings) {
+function publicDxccStats(qsos, settings, rarityRanking = null) {
   if (settings.showDxccStats === false) return null;
   const withMeta = qsos.filter(q => q.dxcc || q.country || q.cont);
   const entities = new Set(withMeta.map(q => String(q.dxcc || '')).filter(Boolean));
@@ -145,6 +146,12 @@ function publicDxccStats(qsos, settings) {
     continents: continents.size,
     byContinent: countMap('cont'),
     topDxcc: [...entityMap.values()].sort((a, b) => b.qsos - a.qsos || a.dxcc.localeCompare(b.dxcc, undefined, { numeric: true })).slice(0, 10),
+    rarestWorked: topRarestWorked(withMeta, rarityRanking, 3),
+    raritySource: rarityRanking ? {
+      name: rarityRanking.source,
+      fetchedAt: rarityRanking.fetchedAt,
+      stale: rarityRanking.stale === true
+    } : null,
     byBand: [...bandMap.entries()].map(([band, v]) => ({ band, qsos: v.qsos, entities: v.entities.size })).sort((a, b) => b.entities - a.entities || b.qsos - a.qsos),
     byMode: settings.showMode ? [...modeMap.entries()].map(([mode, v]) => ({ mode, qsos: v.qsos, entities: v.entities.size })).sort((a, b) => b.entities - a.entities || b.qsos - a.qsos) : null,
     farthest,
@@ -152,7 +159,12 @@ function publicDxccStats(qsos, settings) {
   };
 }
 async function buildSnapshot(serverPayload = {}) {
-  const [qsos, settingsRaw, confirmations] = await Promise.all([readJsonOriginal(QSO_FILE, []), readJsonOriginal(SETTINGS_FILE, {}), ensureLotwState()]);
+  const [qsos, settingsRaw, confirmations, rarityRanking] = await Promise.all([
+    readJsonOriginal(QSO_FILE, []),
+    readJsonOriginal(SETTINGS_FILE, {}),
+    ensureLotwState(),
+    getMostWanted()
+  ]);
   const lotwSettings = normalizedLotwSettings(settingsRaw);
   const settings = { ...settingsRaw, ...lotwSettings };
   const bands = new Set(settings.bands || []), modes = new Set(settings.modes || []);
@@ -179,7 +191,7 @@ async function buildSnapshot(serverPayload = {}) {
     lotwCount: confirmed.length,
     qsoCount: shown.length,
     returnedQsos: limited.length,
-    stats: { dxcc: publicDxccStats(shown, settings) },
+    stats: { dxcc: publicDxccStats(shown, settings, rarityRanking) },
     qsos: limited.map(q => sanitizePublicQso(q, settings))
   };
 }

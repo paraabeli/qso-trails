@@ -14,6 +14,7 @@ const { allowedExactFile } = require('./safe-files');
 const { parseCoord, safeEqual } = require('./security-helpers');
 const { parseAdif } = require('./adif-parser');
 const { distanceKm, maidenheadToLatLon, positionAtPrecision, publicHome, qsoSortKey, qsoTimestamp, sanitizePublicQso } = require('./qso-helpers');
+const { getMostWanted, topRarestWorked } = require('./dxcc-rarity');
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -308,7 +309,7 @@ function filterAllowedQsos(qsos, settings) {
   return qsos.filter(q => bands.has(q.band) && modes.has(q.mode));
 }
 
-function publicDxccStats(qsos, settings) {
+function publicDxccStats(qsos, settings, rarityRanking = null) {
   if (!settings.showDxccStats) return null;
   const withMeta = qsos.filter(q => q.dxcc || q.country || q.cont);
   const entities = new Set(withMeta.map(q => String(q.dxcc || '')).filter(Boolean));
@@ -367,6 +368,12 @@ function publicDxccStats(qsos, settings) {
     continents: continents.size,
     byContinent: countMap('cont'),
     topDxcc,
+    rarestWorked: topRarestWorked(withMeta, rarityRanking, 3),
+    raritySource: rarityRanking ? {
+      name: rarityRanking.source,
+      fetchedAt: rarityRanking.fetchedAt,
+      stale: rarityRanking.stale === true
+    } : null,
     byBand,
     byMode,
     farthest,
@@ -396,8 +403,9 @@ async function rebuildPublicSnapshot() {
   const { qsos, settings } = await getState();
   const allowed = filterAllowedQsos(qsos, settings).sort((a, b) => qsoSortKey(b).localeCompare(qsoSortKey(a)));
   const limited = allowed.slice(0, settings.maxPaths);
+  const rarityRanking = settings.showDxccStats ? await getMostWanted() : null;
   const payload = {
-    version: 3,
+    version: 4,
     settings: {
       stationName: settings.stationName,
       home: publicHome(settings),
@@ -407,7 +415,7 @@ async function rebuildPublicSnapshot() {
     },
     qsoCount: allowed.length,
     returnedQsos: limited.length,
-    stats: { dxcc: publicDxccStats(allowed, settings) },
+    stats: { dxcc: publicDxccStats(allowed, settings, rarityRanking) },
     qsos: limited.map(q => sanitizePublicQso(q, settings))
   };
   await writeJson(PUBLIC_SNAPSHOT_FILE, payload);
