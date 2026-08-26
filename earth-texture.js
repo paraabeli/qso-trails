@@ -9,6 +9,8 @@ const diagnostics = require('./diagnostics');
 
 const DATA = path.join(__dirname, 'data');
 const CACHE = path.join(DATA, 'earth-blue-marble-ng-200412.png');
+const IMAGE_SEED_DIR = path.join(__dirname, 'earth-seed');
+const IMAGE_SEED = path.join(IMAGE_SEED_DIR, 'earth-blue-marble-ng-200412.png');
 const SOURCE = 'https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x5400x2700.png';
 const SOURCE_PAGE = 'https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/base-topography-bathymetry/';
 const CREDIT = 'NASA Earth Observatory';
@@ -26,6 +28,7 @@ let lastAttemptAt = null;
 let lastSuccessAt = null;
 let lastError = null;
 let lastSourceBytes = null;
+let activeSource = null;
 
 function downsample(img, width, height) {
   const out = Buffer.alloc(width * height * 4);
@@ -99,19 +102,30 @@ async function fetchBounded() {
   throw error || new Error('NASA Earth texture download failed.');
 }
 
-async function validCachedTexture() {
+async function validTextureAt(file, source) {
   try {
-    const cached = await fs.readFile(CACHE);
+    const cached = await fs.readFile(file);
     const decoded = decodePng(cached, { maxPixels: TARGET_W * TARGET_H + 1 });
-    if (decoded.width === TARGET_W && decoded.height === TARGET_H) return cached;
-    diagnostics.warn('earth', 'Cached Blue Marble texture had unexpected dimensions.', { width: decoded.width, height: decoded.height });
+    if (decoded.width === TARGET_W && decoded.height === TARGET_H) return { body: cached, source };
+    diagnostics.warn('earth', 'Cached Blue Marble texture had unexpected dimensions.', { source, width: decoded.width, height: decoded.height });
   } catch (error) {
-    if (error?.code !== 'ENOENT') diagnostics.warn('earth', 'Cached Blue Marble texture could not be read.', { error: error.message || error });
+    if (error?.code !== 'ENOENT') diagnostics.warn('earth', 'Cached Blue Marble texture could not be read.', { source, error: error.message || error });
   }
   return null;
 }
 
-async function downloadAndCache() {
+async function validCachedTexture() {
+  return await validTextureAt(CACHE, 'persistent') || await validTextureAt(IMAGE_SEED, 'image');
+}
+
+async function writeTexture(target, png) {
+  await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
+  const tmp = `${target}.${crypto.randomUUID()}.tmp`;
+  await fs.writeFile(tmp, png, { mode: 0o600 });
+  await fs.rename(tmp, target);
+}
+
+async function downloadAndCache(target = CACHE, sourceLabel = 'persistent') {
   const original = await fetchBounded();
   diagnostics.info('earth', 'Decoding NASA Blue Marble PNG.', { sourceBytes: original.length });
   const decoded = decodePng(original, { maxPixels: 16_000_000 });
@@ -119,23 +133,29 @@ async function downloadAndCache() {
     diagnostics.warn('earth', 'NASA Blue Marble source dimensions changed.', { width: decoded.width, height: decoded.height });
   }
   const png = downsample(decoded, TARGET_W, TARGET_H);
-  await fs.mkdir(DATA, { recursive: true, mode: 0o700 });
-  const tmp = `${CACHE}.${crypto.randomUUID()}.tmp`;
-  await fs.writeFile(tmp, png, { mode: 0o600 });
-  await fs.rename(tmp, CACHE);
+  await writeTexture(target, png);
   lastSuccessAt = new Date().toISOString();
   lastError = null;
-  diagnostics.info('earth', 'NASA Blue Marble cache refreshed successfully.', { width: TARGET_W, height: TARGET_H, cacheBytes: png.length });
+  activeSource = sourceLabel;
+  diagnostics.info('earth', 'NASA Blue Marble cache refreshed successfully.', { source: sourceLabel, width: TARGET_W, height: TARGET_H, cacheBytes: png.length });
   return png;
+}
+
+async function buildEarthSeed() {
+  const existing = await validTextureAt(IMAGE_SEED, 'image');
+  if (existing) return existing.body;
+  return downloadAndCache(IMAGE_SEED, 'image');
 }
 
 async function loadTexture() {
   const cached = await validCachedTexture();
   if (cached) {
-    diagnostics.debug('earth', 'Using locally cached NASA Blue Marble texture.', { cacheBytes: cached.length });
-    return cached;
+    activeSource = cached.source;
+    lastError = null;
+    diagnostics.debug('earth', 'Using locally cached NASA Blue Marble texture.', { source: cached.source, cacheBytes: cached.body.length });
+    return cached.body;
   }
-  try { return await downloadAndCache(); }
+  try { return await downloadAndCache(CACHE, 'persistent'); }
   catch (error) {
     lastError = String(error?.message || error);
     diagnostics.error('earth', 'NASA Blue Marble texture unavailable.', { error: lastError });
@@ -165,32 +185,39 @@ async function globeEarthPng() {
 async function refreshEarthTexture() {
   diagnostics.info('earth', 'Admin requested a Blue Marble cache refresh.');
   try {
-    const body = await downloadAndCache();
+    const body = await downloadAndCache(CACHE, 'persistent');
     texturePromise = Promise.resolve(body);
     globePromise = null;
     await globeEarthPng();
     return await earthStatus();
   } catch (error) {
     lastError = String(error?.message || error);
-    diagnostics.error('earth', 'Admin Blue Marble refresh failed; existing cache was preserved.', { error: lastError });
+    diagnostics.error('earth', 'Admin Blue Marble refresh failed; existing image seed/cache was preserved.', { error: lastError });
     throw error;
   }
 }
 
-async function earthStatus() {
-  let cache = null;
+async function fileStatus(file, source) {
   try {
-    const stat = await fs.stat(CACHE);
-    cache = { available: true, bytes: stat.size, modifiedAt: stat.mtime.toISOString() };
+    const stat = await fs.stat(file);
+    return { available: true, source, bytes: stat.size, modifiedAt: stat.mtime.toISOString() };
   } catch (error) {
-    if (error?.code !== 'ENOENT') cache = { available: false, error: String(error?.message || error) };
-    else cache = { available: false };
+    if (error?.code === 'ENOENT') return { available: false, source };
+    return { available: false, source, error: String(error?.message || error) };
   }
+}
+
+async function earthStatus() {
+  const persistent = await fileStatus(CACHE, 'persistent');
+  const image = await fileStatus(IMAGE_SEED, 'image');
+  const cache = persistent.available ? persistent : image.available ? image : persistent.error ? persistent : image;
   return {
     available: Boolean(cache.available),
     sourceHost: new URL(SOURCE).hostname,
     sourcePage: SOURCE_PAGE,
     cache,
+    caches: { persistent, image },
+    activeSource,
     lastAttemptAt,
     lastSuccessAt,
     lastSourceBytes,
@@ -207,7 +234,7 @@ express.application.listen = function earthTextureListen(...args) {
   this.get('/assets/earth-blue-marble.png', async (req, res) => {
     try {
       const body = await globeEarthPng();
-      res.set('Cache-Control', 'public, max-age=86400');
+      res.set('Cache-Control', 'public, max-age=86400, immutable');
       res.set('X-Imagery-Credit', CREDIT);
       res.type('image/png').send(body);
     } catch (error) {
@@ -223,11 +250,13 @@ module.exports = {
   globeEarthPng,
   refreshEarthTexture,
   earthStatus,
+  buildEarthSeed,
   SOURCE,
   SOURCE_PAGE,
   CREDIT,
   TITLE,
   CACHE,
+  IMAGE_SEED,
   TARGET_W,
   TARGET_H,
   DOWNLOAD_TIMEOUT_MS,
