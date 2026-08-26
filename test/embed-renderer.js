@@ -59,6 +59,12 @@ assert.match(extras,/toolsBox\.hidden=true;toolsBox\.style\.display='none'/,'Sea
 assert.match(extras,/3D globe · Imagery: NASA Earth Observatory · Blue Marble: Next Generation/,'Earth embed must identify the renderer as a 3D globe and credit NASA');
 assert.match(extras,/vector globe fallback active/,'Earth texture failures must be visible instead of looking like a normal Mercator map');
 
+const earthTexture=read('earth-texture.js');
+assert.match(earthTexture,/DOWNLOAD_TIMEOUT_MS = 90_000/,'NASA texture download must allow slow self-hosted connections more than 15 seconds');
+assert.match(earthTexture,/DOWNLOAD_ATTEMPTS = 3/,'NASA texture download must retry bounded transient failures');
+assert.match(earthTexture,/diagnostics\.warn\('earth', 'NASA Blue Marble download attempt failed\.'/,'Earth download failures must be visible in private diagnostics');
+assert.match(earthTexture,/existing cache was preserved/,'manual-style refresh failures must preserve a previously good Earth cache');
+
 const staticRenderer=read('static-render.js');
 assert.match(staticRenderer,/RAREST \$\{rare\}/,'static info box must include rarest worked DXCC entities');
 assert.match(staticRenderer,/NASA EARTH OBSERVATORY \/ BLUE MARBLE NEXT GENERATION/,'NASA static output must include visible credit');
@@ -68,14 +74,16 @@ assert.match(staticThemes,/if \(options\.projection === 'mercator'\) fillEarthMe
 assert.match(staticThemes,/else fillEarthGlobe/,'Earth static renderer must have a separate globe projection path');
 
 const adminHtml=read('public/admin.html');
-assert.match(adminHtml,/Admin UI build 2026-08-26\.3/,'Admin must display a build marker so stale deployments are obvious');
+assert.match(adminHtml,/Admin UI build 2026-08-26\.4/,'Admin must display the current build marker');
 assert.match(adminHtml,/id="embedShowWebm"/,'WebM visibility control must exist directly in Admin HTML');
 assert.match(adminHtml,/id="embedShowReplay"/,'Replay visibility control must exist directly in Admin HTML');
 assert.match(adminHtml,/id="embedShowTools"/,'Search Live visibility control must exist directly in Admin HTML');
 assert.match(adminHtml,/Real Earth · NASA Blue Marble NG · 3D globe/,'Blue Marble NG interactive theme must exist directly in Admin HTML');
 assert.match(adminHtml,/id="staticProjection"[\s\S]*value="globe">3D globe[\s\S]*value="mercator">Mercator map/,'Static Admin must expose distinct globe and Mercator projections');
 assert.match(adminHtml,/id="staticTheme"[\s\S]*value="earth">Real Earth · NASA Blue Marble NG/,'Static Blue Marble NG theme must exist directly in Admin HTML');
-assert.match(adminHtml,/admin\.js\?v=20260826-3/,'Admin JS must be cache-busted after controls move into core Admin');
+assert.match(adminHtml,/id="diagnosticsCard"/,'Admin must expose a private diagnostics section');
+assert.match(adminHtml,/id="diagnosticLog"/,'Admin must expose recent sanitized application logs');
+assert.match(adminHtml,/admin\.js\?v=20260826-4/,'Admin JS must be cache-busted for diagnostics changes');
 assert.doesNotMatch(adminHtml,/admin-publish\.js/,'current Admin must not depend on the legacy dynamic publish helper');
 
 const admin=read('public/admin.js');
@@ -83,6 +91,15 @@ assert.match(admin,/setHiddenFlag\(p,'webm','embedShowWebm'\)/,'core Admin must 
 assert.match(admin,/setHiddenFlag\(p,'replaycontrols','embedShowReplay'\)/,'core Admin must write the replay visibility flag');
 assert.match(admin,/setHiddenFlag\(p,'tools','embedShowTools'\)/,'core Admin must write the Search Live visibility flag');
 assert.match(admin,/p\.set\('projection',\$\('staticProjection'\)\?\.value==='mercator'\?'mercator':'globe'\)/,'core Admin must preserve the selected static projection');
-assert.match(admin,/NASA Blue Marble NG status: texture available/,'Admin must report Earth texture health');
+assert.match(admin,/fetch\('\/api\/admin\/diagnostics\?limit=300'/,'Earth health must use the authenticated private diagnostics endpoint');
+assert.doesNotMatch(admin,/assets\/earth-blue-marble\.png\?check/,'Admin health checks must not trigger a public texture download with HEAD');
+
+const diagnostics=read('diagnostics.js');
+assert.match(diagnostics,/MAX_ENTRIES = 500/,'diagnostic log must be memory bounded');
+assert.match(diagnostics,/authorization\|cookie\|csrf/i,'diagnostics must redact authentication-related fields');
+const adminDiagnostics=read('admin-diagnostics.js');
+assert.match(adminDiagnostics,/this\.get\('\/api\/admin\/diagnostics'/,'private diagnostics endpoint must live under the existing admin route prefix');
+assert.match(adminDiagnostics,/pathname !== '\/api\/admin\/diagnostics'/,'diagnostics polling must not recursively flood its own log');
+assert.doesNotMatch(adminDiagnostics,/remoteAddress|req\.ip|x-forwarded-for/i,'diagnostic request logging must not collect visitor IP addresses');
 
 console.log('embed renderer regression tests passed');

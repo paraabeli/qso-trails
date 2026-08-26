@@ -19,6 +19,8 @@ COPY privacy-defaults.js ./
 COPY png-codec.js ./
 COPY dxcc-rarity.js ./
 COPY static-size.js ./
+COPY diagnostics.js ./
+COPY admin-diagnostics.js ./
 COPY earth-texture.js ./
 COPY static-render.js ./
 COPY static-publish.js ./
