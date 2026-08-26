@@ -13,12 +13,22 @@ QSO Trails is MIT licensed. It also depends on third-party software and data tha
 
 `world-atlas` contains geographic data derived from Natural Earth. Natural Earth data is public domain. The conversion/distribution package itself retains its own license.
 
-The optional `earth` theme uses **NASA Visible Earth / Blue Marble — Land Surface, Ocean Color and Sea Ice**. QSO Trails downloads the fixed NASA source server-side when needed and stores a reduced local cache; the original image is not bundled in the Git repository.
+The optional `earth` theme uses **NASA Earth Observatory Blue Marble: Next Generation**, specifically the December global topography-and-bathymetry image. QSO Trails downloads the fixed NASA-hosted source server-side when needed, stores a reduced local cache, and serves a smaller browser texture for the interactive globe. Visitor browsers do not contact NASA directly.
 
-NASA states that its media is generally not subject to copyright in the United States, subject to NASA's media/identity usage guidelines and third-party exceptions. QSO Trails credits this imagery as **NASA Blue Marble / NASA Visible Earth** and does not imply NASA endorsement. Operators redistributing or branding the imagery should review NASA's current media usage guidance.
+NASA Earth Observatory asks users republishing Blue Marble: Next Generation to credit **NASA Earth Observatory**. QSO Trails therefore displays that credit whenever the NASA imagery is used in the interactive globe or a static image. NASA media and identity guidance still applies, and the credit does not imply NASA endorsement.
+
+NASA reference page: https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/base-topography-bathymetry/
+
+## DXCC rarity data
+
+The optional DXCC rarity summary uses the **Club Log Most Wanted** JSON API. QSO Trails fetches the global ranking server-side and caches it locally; it does not send a user's QSO records, callsigns, grids, or other station data to Club Log. Worked entities are matched locally using ADIF DXCC entity numbers.
+
+Club Log API documentation: https://clublog.freshdesk.com/support/solutions/articles/76225-most-wanted-list-json-api
+
+Club Log remains the source of the ranking data and controls its availability and update schedule. Operators should review Club Log's current API terms and guidance before redistributing the ranking dataset independently of QSO Trails.
 
 ## Container images
 
 Docker deployments use official Node.js and Caddy container images. Their bundled software components retain their respective upstream licenses.
 
-This notice is provided for convenience and does not replace upstream license texts, attribution requirements, trademark policies, or media-use guidance.
+This notice is provided for convenience and does not replace upstream license texts, attribution requirements, trademark policies, API terms, or media-use guidance.
