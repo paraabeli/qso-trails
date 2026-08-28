@@ -8,6 +8,7 @@ const PANEL_TOP = 338;
 const PANEL_LEFT = 10;
 const PANEL_RIGHT = 630;
 const PANEL_BOTTOM = 490;
+const NASA_CREDIT_TEXT = 'IMAGE BY NASA EARTH OBSERVATORY / BLUE MARBLE NEXT GENERATION';
 
 const FONT = {
   A:['01110','10001','10001','11111','10001','10001','10001'],B:['11110','10001','10001','11110','10001','10001','11110'],C:['01111','10000','10000','10000','10000','10000','01111'],D:['11110','10001','10001','10001','10001','10001','11110'],E:['11111','10000','10000','11110','10000','10000','11111'],F:['11111','10000','10000','11110','10000','10000','10000'],G:['01111','10000','10000','10111','10001','10001','01110'],H:['10001','10001','10001','11111','10001','10001','10001'],I:['11111','00100','00100','00100','00100','00100','11111'],J:['00111','00010','00010','00010','10010','10010','01100'],K:['10001','10010','10100','11000','10100','10010','10001'],L:['10000','10000','10000','10000','10000','10000','11111'],M:['10001','11011','10101','10101','10001','10001','10001'],N:['10001','11001','10101','10011','10001','10001','10001'],O:['01110','10001','10001','10001','10001','10001','01110'],P:['11110','10001','10001','11110','10000','10000','10000'],Q:['01110','10001','10001','10001','10101','10010','01101'],R:['11110','10001','10001','11110','10100','10010','10001'],S:['01111','10000','10000','01110','00001','00001','11110'],T:['11111','00100','00100','00100','00100','00100','00100'],U:['10001','10001','10001','10001','10001','10001','01110'],V:['10001','10001','10001','10001','10001','01010','00100'],W:['10001','10001','10001','10101','10101','10101','01010'],X:['10001','10001','01010','00100','01010','10001','10001'],Y:['10001','10001','01010','00100','00100','00100','00100'],Z:['11111','00001','00010','00100','01000','10000','11111'],
@@ -81,6 +82,14 @@ function publicGrid(privateSettings = {}, requested = 0) {
   return { value: grid.slice(0, length), length, requested: wanted, limited: length < wanted };
 }
 
+function stationLine(data = {}, options = {}, privateSettings = {}) {
+  const parts = [];
+  if (options.showName !== false) parts.push(String(data.settings?.stationName || 'QSO Trails').trim());
+  const grid = publicGrid(privateSettings, options.gridPrecision);
+  if (grid?.value) parts.push(grid.value);
+  return parts.filter(Boolean).join(' ');
+}
+
 function applyStaticInfo(body, data = {}, options = {}, privateSettings = {}, theme = 'clean') {
   const image = decodePng(body, { maxPixels: BASE_WIDTH * BASE_HEIGHT + 32 });
   if (image.width !== BASE_WIDTH || image.height !== BASE_HEIGHT) throw new Error('Static info overlay expects the 640x500 base renderer.');
@@ -103,8 +112,9 @@ function applyStaticInfo(body, data = {}, options = {}, privateSettings = {}, th
     y += 16;
   }
 
-  if (options.showName !== false && y <= PANEL_BOTTOM - 24) {
-    text(image, data.settings?.stationName || 'QSO Trails', PANEL_LEFT + 8, y, 2, colors.text, PANEL_RIGHT - PANEL_LEFT - 20);
+  const station = stationLine(data, options, privateSettings);
+  if (station && y <= PANEL_BOTTOM - 24) {
+    text(image, station, PANEL_LEFT + 8, y, 2, colors.text, PANEL_RIGHT - PANEL_LEFT - 20);
     y += 20;
   }
 
@@ -124,13 +134,6 @@ function applyStaticInfo(body, data = {}, options = {}, privateSettings = {}, th
     y += 12;
   }
 
-  const grid = publicGrid(privateSettings, options.gridPrecision);
-  if (grid && y <= PANEL_BOTTOM - 10) {
-    const suffix = grid.limited ? ' / PRIVACY LIMITED' : '';
-    text(image, `GRID ${grid.value} / ${grid.length} CHAR${suffix}`, PANEL_LEFT + 8, y, 1, colors.muted, PANEL_RIGHT - PANEL_LEFT - 20);
-    y += 12;
-  }
-
   if (options.showRarity !== false && dxcc?.rarestWorked?.length && y <= PANEL_BOTTOM - 10) {
     const rare = dxcc.rarestWorked.slice(0, 3).map(item => `#${Number(item.rank)} DXCC ${item.dxcc}`).join(' / ');
     text(image, `RAREST ${rare}`, PANEL_LEFT + 8, y, 1, colors.muted, PANEL_RIGHT - PANEL_LEFT - 20);
@@ -143,9 +146,9 @@ function applyStaticInfo(body, data = {}, options = {}, privateSettings = {}, th
   }
 
   if (options.showNasaCredit === true) {
-    text(image, 'NASA EARTH OBSERVATORY / BLUE MARBLE NEXT GENERATION', PANEL_LEFT + 8, Math.min(PANEL_BOTTOM - 8, y), 1, colors.muted, PANEL_RIGHT - PANEL_LEFT - 20);
+    text(image, NASA_CREDIT_TEXT, PANEL_LEFT + 8, Math.min(PANEL_BOTTOM - 8, y), 1, colors.muted, PANEL_RIGHT - PANEL_LEFT - 20);
   }
   return encodePng(image.width, image.height, image.data);
 }
 
-module.exports = { applyStaticInfo, publicGrid, requestedGridPrecision };
+module.exports = { applyStaticInfo, publicGrid, requestedGridPrecision, stationLine, NASA_CREDIT_TEXT };
