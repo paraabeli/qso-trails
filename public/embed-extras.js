@@ -28,7 +28,7 @@
     panel?.after(credit);
     fetch('/assets/earth-blue-marble.png',{method:'HEAD',cache:'force-cache'}).then(response=>{
       const bytes=Number(response.headers.get('content-length'))||0;
-      const size=bytes?` · ${(bytes/1024).toFixed(bytes>=1024*1024?0:1)} ${bytes>=1024*1024?'MiB':'KiB'}`:'';
+      const size=bytes?(bytes>=1024*1024?` · ${(bytes/1024/1024).toFixed(1)} MiB`:` · ${(bytes/1024).toFixed(0)} KiB`):'';
       credit.textContent=response.ok?`3D globe · Image by NASA Earth Observatory · Blue Marble: Next Generation${size}`:`3D globe · NASA imagery unavailable (${response.status}) · vector globe fallback active`;
     }).catch(()=>{credit.textContent='3D globe · local NASA imagery unavailable · vector globe fallback active';});
   }
