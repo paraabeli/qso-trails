@@ -15,7 +15,7 @@ The ranking is cached in `data/clublog-most-wanted.json` and refreshed at most o
 
 The public snapshot exposes only aggregate DXCC statistics. It does not expose additional per-QSO DXCC metadata.
 
-The interactive DXCC breakdown can independently show or hide: continent totals, top entities, rarest worked entities, band totals, mode totals, most distant entity, and newest first-worked entity. These are presentation switches only; hiding or showing a section does not change the underlying public-data privacy policy.
+The interactive DXCC breakdown can independently show or hide continent totals, top entities, rarest worked entities, band totals, mode totals, most distant entity, and newest first-worked entity. These are presentation switches only; hiding or showing a section does not change the underlying public-data privacy policy.
 
 ## NASA Blue Marble: Next Generation
 
@@ -47,11 +47,28 @@ The image seed is deliberately outside `/app/data` because production normally m
 
 For deterministic CI or an intentionally offline image build, `QSO_TRAILS_SKIP_EARTH_BUILD=1` skips the external build-time fetch. This is not the normal production setting.
 
-Visitor browsers request `/assets/earth-blue-marble.png` from the QSO Trails host. They never contact NASA. The browser receives a locally generated 2048×1024 derivative and may cache it for 24 hours.
+### Browser delivery and bandwidth
 
-An Admin refresh downloads a new copy into the persistent data cache. If refresh fails, the existing persistent cache or image seed remains usable.
+Visitor browsers never receive the original NASA source and never contact NASA directly. The 4096×2048 local texture is used by the server/static renderer. The interactive globe receives a separate **1280×640** same-origin PNG derivative.
 
-NASA Earth Observatory requests the credit **NASA Earth Observatory** for republication of Blue Marble: Next Generation imagery. QSO Trails displays `NASA Earth Observatory · Blue Marble: Next Generation` in the interactive Earth view and includes the NASA credit in static Earth cards using the actual imagery.
+The browser derivative is generated locally with 6 significant RGB bits per channel before PNG compression. This reduces transfer size without adding a native JPEG/WebP codec dependency to the production image. The WebGL globe then maps that 2:1 texture onto the rotating sphere.
+
+The exact transfer size depends on the image contents. The `/assets/earth-blue-marble.png` response exposes normal `Content-Length` plus:
+
+- `X-QSO-Trails-Texture-Dimensions: 1280x640`
+- `X-QSO-Trails-Texture-Bytes: <exact bytes>`
+
+Admin diagnostics also show the browser texture dimensions and byte size after the derivative has been prepared. The interactive Earth credit displays the local transfer size when the response reports `Content-Length`.
+
+The browser texture may be cached for 24 hours. An Admin refresh downloads a new source copy into the persistent data cache. If refresh fails, the existing persistent cache or image seed remains usable.
+
+NASA Earth Observatory requests the credit **NASA Earth Observatory** for republication of Blue Marble: Next Generation imagery. QSO Trails identifies the interactive texture as `Image by NASA Earth Observatory · Blue Marble: Next Generation`. Static Earth cards use the explicit credit `IMAGE BY NASA EARTH OBSERVATORY / BLUE MARBLE NEXT GENERATION`.
+
+## Content Security Policy compatibility
+
+The embed is designed to run under a strict same-origin CSP. Theme rules, DXCC layout, NASA credit styling, band-dot colors, and the main embed layout live in `/assets/embed.css`; JavaScript does not create `<style>` elements or write `element.style` properties.
+
+The embed document contains only external same-origin scripts. The LoTW helper is referenced explicitly in the HTML rather than relying on runtime HTML mutation. This allows `script-src 'self'` and `style-src 'self'` policies without adding `unsafe-inline` or per-build hashes.
 
 ## Globe versus Mercator
 
@@ -61,7 +78,7 @@ The 3D path inverse-projects the equirectangular NASA texture onto a circular sp
 
 If NASA imagery is unavailable, the application may use its vector-map fallback, but the fallback keeps the same card dimensions and must not be resized into a 2:1 rectangle. The static response also exposes `X-QSO-Trails-Earth-Fallback: 1` when an Earth request had to use the fallback.
 
-## Static image sizing and presets
+## Static image sizing and transfer
 
 All static themes, including `earth`, use the established QSO Trails **640:500 card aspect ratio**. The NASA source remains 2:1 internally as a texture only.
 
@@ -88,6 +105,8 @@ Named presets are also available:
 
 The Admin UI exposes those presets plus Custom width. The generated `<img>` snippet always includes the matching width and height.
 
+The end user receives only the final rendered static PNG, not the NASA source or the 4096×2048 texture. Static PNG byte size varies with dimensions, theme, path density, and selected text. The exact transfer size is available from the static response `Content-Length` header.
+
 The globe itself occupies the map portion of the card and is sized from the smaller map dimension, so changing card size cannot stretch the sphere into an oval.
 
 ## Selectable static information
@@ -101,10 +120,12 @@ The static image URL supports presentation switches that affect only text drawn 
 - `dxcc=0` — hide DXCC entity count;
 - `continents=0` — hide continent count independently of the DXCC entity count;
 - `rarity=0` — hide rarest-worked DXCC information independently;
-- `grid=4` or `grid=6` — show the home Maidenhead locator at the requested length;
+- `grid=4` or `grid=6` — append the home Maidenhead locator directly after the station label;
 - `updated=0` — hide generated timestamp.
 
-The home-grid renderer enforces the global public home-position precision. Requesting `grid=6` while the station is published at 4-character precision produces only four characters; a presentation URL cannot bypass the privacy setting.
+For example, with a station label and four-character grid enabled, the first line is simply `CALLSIGN KP20`. The image does not add `GRID`, `4 CHAR`, `6 CHAR`, or privacy-warning suffix text.
+
+The home-grid renderer still enforces the global public home-position precision. Requesting `grid=6` while the station is published at 4-character precision produces only four characters; a presentation URL cannot bypass the privacy setting.
 
 LoTW and DXCC values are aggregate values already maintained in the sanitized public snapshot. The static renderer does not add per-QSO confirmation status, private DXCC metadata, private coordinates, callsigns, dates, modes, or remote grids.
 
@@ -120,5 +141,6 @@ When changing NASA imagery, verify all of the following before changing `earth-t
 2. the source page and asset URL are documented here and in `THIRD_PARTY_NOTICES.md`;
 3. visible NASA Earth Observatory credit remains in both interactive and static uses;
 4. download and decode limits remain bounded;
-5. the source/seed texture preserves its 2:1 equirectangular texture ratio; and
-6. static **card** output remains aspect-ratio safe and the globe remains circular.
+5. the source/seed texture preserves its 2:1 equirectangular texture ratio;
+6. the browser derivative remains substantially smaller than the internal source/cache; and
+7. static card output remains aspect-ratio safe and the globe remains circular.
