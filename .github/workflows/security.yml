@@ -67,7 +67,7 @@ jobs:
       - name: Start production app for smoke test
         run: docker compose --env-file .env.production -f compose.prod.yaml run -d --name qso-trails-ci -p 3000:3000 -e ADMIN_ALLOWED_IPS=172.16.0.0/12 -e ADMIN_USER=admin -e ADMIN_PASSWORD=ci-only-long-random-password app
 
-      - name: Smoke test production, privacy, themes and Earth cache
+      - name: Smoke test production, privacy, CSP, themes and Earth cache
         run: |
           for attempt in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:3000/embed >/dev/null; then break; fi
@@ -80,30 +80,52 @@ jobs:
           grep -qi '^cache-control: no-store' public.headers
           test "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/assets/admin.html)" = "404"
 
-          docker exec qso-trails-ci grep -Fq 'Admin UI build 2026-08-26.5' /app/public/admin.html
-          docker exec qso-trails-ci grep -Fq 'id="embedShowWebm"' /app/public/admin.html
-          docker exec qso-trails-ci grep -Fq 'id="embedShowReplay"' /app/public/admin.html
-          docker exec qso-trails-ci grep -Fq 'id="embedDxccRarity"' /app/public/admin.html
+          docker exec qso-trails-ci grep -Fq 'Admin UI build 2026-08-28.1' /app/public/admin.html
+          docker exec qso-trails-ci grep -Fq 'style.css?v=20260828-1' /app/public/admin.html
+          docker exec qso-trails-ci grep -Fq 'admin.js?v=20260828-1' /app/public/admin.html
+          docker exec qso-trails-ci grep -Fq 'admin-lotw.js?v=20260828-1' /app/public/admin.html
           docker exec qso-trails-ci grep -Fq 'id="staticShowLotw"' /app/public/admin.html
           docker exec qso-trails-ci grep -Fq 'id="staticGrid"' /app/public/admin.html
-          docker exec qso-trails-ci grep -Fq 'id="staticSizePreset"' /app/public/admin.html
           docker exec qso-trails-ci grep -Fq 'id="diagnosticsCard"' /app/public/admin.html
-          docker exec qso-trails-ci grep -Fq 'Real Earth · NASA Blue Marble NG · 3D globe' /app/public/admin.html
-          docker exec qso-trails-ci grep -Fq 'admin.js?v=20260826-5' /app/public/admin.html
-          docker exec qso-trails-ci grep -Fq 'theme-pack.js?v=20260826-5' /app/public/embed.html
-          docker exec qso-trails-ci grep -Fq 'globe.js?v=20260826-5' /app/public/embed.html
-          curl -fsS -D admin-js.headers 'http://127.0.0.1:3000/assets/admin.js?v=20260826-5' -o /dev/null
+          docker exec qso-trails-ci sh -lc '! grep -Eq "[[:space:]]style=" /app/public/admin.html'
+
+          docker exec qso-trails-ci grep -Fq 'embed.css?v=20260828-1' /app/public/embed.html
+          docker exec qso-trails-ci grep -Fq 'theme-pack.js?v=20260828-1' /app/public/embed.html
+          docker exec qso-trails-ci grep -Fq 'globe.js?v=20260828-1' /app/public/embed.html
+          docker exec qso-trails-ci grep -Fq 'embed-extras.js?v=20260828-1' /app/public/embed.html
+          docker exec qso-trails-ci grep -Fq 'embed-lotw.js?v=20260828-1' /app/public/embed.html
+          docker exec qso-trails-ci sh -lc '! grep -Eqi "<style([[:space:]>])" /app/public/embed.html'
+          docker exec qso-trails-ci sh -lc '! grep -Eq "[[:space:]]style=" /app/public/embed.html'
+          docker exec qso-trails-ci sh -lc '! grep -Fq ".style." /app/public/theme-pack.js'
+          docker exec qso-trails-ci sh -lc '! grep -Fq ".style." /app/public/embed-extras.js'
+          docker exec qso-trails-ci sh -lc '! grep -Fq ".style." /app/public/globe.js'
+
+          curl -fsS -D admin-js.headers 'http://127.0.0.1:3000/assets/admin.js?v=20260828-1' -o /dev/null
           grep -qi '^cache-control: no-store' admin-js.headers
+          test "$(curl -sS -o /dev/null -w '%{http_code}' 'http://127.0.0.1:3000/assets/embed.css?v=20260828-1')" = "200"
 
           test "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/api/admin/diagnostics)" = "401"
           curl -fsS -u 'admin:ci-only-long-random-password' -D diagnostics.headers 'http://127.0.0.1:3000/api/admin/diagnostics?limit=50' -o diagnostics.json
           grep -qi '^cache-control: no-store' diagnostics.headers
           node -e "const d=require('./diagnostics.json');if(!d.earth||!Array.isArray(d.logs)||'csrfToken' in d)process.exit(1)"
 
-          docker exec qso-trails-ci node -e "const fs=require('fs'),{encodePng}=require('/app/png-codec');const w=4096,h=2048,p=Buffer.alloc(w*h*4);for(let i=0;i<p.length;i+=4){p[i]=20;p[i+1]=70;p[i+2]=130;p[i+3]=255}fs.writeFileSync('/app/data/earth-blue-marble-ng-200412.png',encodePng(w,h,p))"
-          curl -fsSI 'http://127.0.0.1:3000/assets/earth-blue-marble.png' | grep -qi '^content-type: image/png'
-          curl -fsS http://127.0.0.1:3000/assets/earth-blue-marble.png -o earth.png
+          docker exec qso-trails-ci node -e "const fs=require('fs'),{encodePng}=require('/app/png-codec');const w=4096,h=2048,p=Buffer.alloc(w*h*4);for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=(y*w+x)*4;p[i]=(x*17+y*3)&255;p[i+1]=(x*5+y*11)&255;p[i+2]=(x*7+y*13)&255;p[i+3]=255}fs.writeFileSync('/app/data/earth-blue-marble-ng-200412.png',encodePng(w,h,p))"
+          curl -fsSI 'http://127.0.0.1:3000/assets/earth-blue-marble.png?v=20260828-1' > earth.headers
+          grep -qi '^content-type: image/png' earth.headers
+          grep -qi '^x-qso-trails-texture-dimensions: 1280x640' earth.headers
+          grep -qi '^x-qso-trails-texture-bytes:' earth.headers
+          curl -fsS 'http://127.0.0.1:3000/assets/earth-blue-marble.png?v=20260828-1' -o earth.png
           test "$(xxd -p -l 8 earth.png)" = "89504e470d0a1a0a"
+          test "$(stat -c%s earth.png)" -lt 4194304
+          node - <<'NODE'
+          const fs=require('fs');
+          const {decodePng}=require('./png-codec');
+          const image=decodePng(fs.readFileSync('earth.png'),{maxPixels:1_000_000});
+          if(image.width!==1280||image.height!==640)throw new Error(`Browser Earth texture mismatch: ${image.width}x${image.height}`);
+          for(let i=0;i<Math.min(image.data.length,200000);i+=4){
+            if((image.data[i]&3)||(image.data[i+1]&3)||(image.data[i+2]&3))throw new Error('Browser Earth RGB quantization missing');
+          }
+          NODE
 
           for theme in retro clean futuristic rough midnight aurora amber mono ice earth; do
             curl -fsS -D static.headers "http://127.0.0.1:3000/static/qrz.png?projection=globe&theme=$theme" -o "qrz-$theme-globe.png"
@@ -141,7 +163,6 @@ jobs:
           if(String(dimensions('qrz-preset.png'))!=='640,500')throw new Error('QRZ preset mismatch');
           if(String(dimensions('qso-card-preset.png'))!=='960,750')throw new Error('QSO card preset mismatch');
           if(String(dimensions('homepage-preset.png',2_000_000))!=='1280,1000')throw new Error('Homepage preset mismatch');
-
           const globe=decodePng(fs.readFileSync('qrz-earth-sized.png'),{maxPixels:1_000_000});
           const mapHeight=Math.round(globe.height*338/500);let minX=globe.width,minY=mapHeight,maxX=-1,maxY=-1;
           for(let y=0;y<mapHeight;y++)for(let x=0;x<globe.width;x++){
@@ -153,11 +174,13 @@ jobs:
           NODE
 
           curl -fsS 'http://127.0.0.1:3000/embed?theme=earth&dxccrare=0&dxccmode=0' -o earth-embed.html
-          grep -Fq '/assets/theme-pack.js?v=20260826-5' earth-embed.html
-          grep -Fq '/assets/globe.js?v=20260826-5' earth-embed.html
-          grep -Fq '/assets/embed-extras.js?v=20260826-5' earth-embed.html
-          test "$(curl -sS -o /dev/null -w '%{http_code}' 'http://127.0.0.1:3000/assets/theme-pack.js?v=20260826-5')" = "200"
-          test "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/assets/admin-theme-pack.js)" = "200"
+          grep -Fq '/assets/embed.css?v=20260828-1' earth-embed.html
+          grep -Fq '/assets/theme-pack.js?v=20260828-1' earth-embed.html
+          grep -Fq '/assets/globe.js?v=20260828-1' earth-embed.html
+          grep -Fq '/assets/embed-extras.js?v=20260828-1' earth-embed.html
+          grep -Fq '/assets/embed-lotw.js?v=20260828-1' earth-embed.html
+          ! grep -Eqi '<style([[:space:]>])' earth-embed.html
+          test "$(curl -sS -o /dev/null -w '%{http_code}' 'http://127.0.0.1:3000/assets/theme-pack.js?v=20260828-1')" = "200"
 
       - name: Clean up smoke container
         if: always()

@@ -18,17 +18,18 @@
   const hint=document.querySelector('.hint');if(hint)hint.hidden=!showDetails;
   if(dxcc)dxcc.hidden=!showDxcc;
   if(panel)panel.hidden=!showDxcc;
-  if(toolsBox&&!showTools){toolsBox.hidden=true;toolsBox.style.display='none';}
+  if(toolsBox&&!showTools)toolsBox.hidden=true;
   recordButton.hidden=!showWebm||!showTools;
   downloadButton.hidden=true;
-  if(replayBox&&!showReplayControls){replayBox.hidden=true;replayBox.style.display='none';}
+  if(replayBox&&!showReplayControls)replayBox.hidden=true;
   if(earthMode){
     const credit=document.createElement('div');
-    credit.id='nasaImageryCredit';credit.textContent='3D globe · NASA Blue Marble: Next Generation · checking local texture…';
-    credit.style.marginTop='6px';credit.style.fontSize='10px';credit.style.opacity='.82';credit.style.lineHeight='1.25';
+    credit.id='nasaImageryCredit';credit.className='nasaCredit';credit.textContent='3D globe · NASA Blue Marble: Next Generation · checking local texture…';
     panel?.after(credit);
     fetch('/assets/earth-blue-marble.png',{method:'HEAD',cache:'force-cache'}).then(response=>{
-      credit.textContent=response.ok?'3D globe · Imagery: NASA Earth Observatory · Blue Marble: Next Generation':`3D globe · NASA imagery unavailable (${response.status}) · vector globe fallback active`;
+      const bytes=Number(response.headers.get('content-length'))||0;
+      const size=bytes?(bytes>=1024*1024?` · ${(bytes/1024/1024).toFixed(1)} MiB`:` · ${(bytes/1024).toFixed(0)} KiB`):'';
+      credit.textContent=response.ok?`3D globe · Image by NASA Earth Observatory · Blue Marble: Next Generation${size}`:`3D globe · NASA imagery unavailable (${response.status}) · vector globe fallback active`;
     }).catch(()=>{credit.textContent='3D globe · local NASA imagery unavailable · vector globe fallback active';});
   }
 
@@ -38,7 +39,7 @@
   const labelEntity=item=>item?.country?`${item.country} · DXCC ${item.dxcc}`:`DXCC ${item?.dxcc||'?'}`;
   const makeSection=(title,lines)=>{
     const box=document.createElement('div'),strong=document.createElement('strong'),body=document.createElement('div');
-    strong.textContent=title;body.style.marginTop='4px';body.style.lineHeight='1.45';body.textContent=lines.length?lines.join('\n'):'—';box.append(strong,body);return box;
+    strong.textContent=title;body.className='dxccSectionBody';body.textContent=lines.length?lines.join('\n'):'—';box.append(strong,body);return box;
   };
 
   function renderDxcc(stats){

@@ -20,17 +20,19 @@ const DOWNLOAD_TIMEOUT_MS = 90_000;
 const DOWNLOAD_ATTEMPTS = 3;
 const TARGET_W = 4096;
 const TARGET_H = 2048;
-const GLOBE_W = 2048;
-const GLOBE_H = 1024;
+const GLOBE_W = 1280;
+const GLOBE_H = 640;
+const GLOBE_COLOR_MASK = 0xfc;
 let texturePromise = null;
 let globePromise = null;
 let lastAttemptAt = null;
 let lastSuccessAt = null;
 let lastError = null;
 let lastSourceBytes = null;
+let lastBrowserBytes = null;
 let activeSource = null;
 
-function downsample(img, width, height) {
+function downsample(img, width, height, colorMask = 0xff) {
   const out = Buffer.alloc(width * height * 4);
   for (let y = 0; y < height; y++) {
     const sy = Math.min(img.height - 1, Math.floor((y + 0.5) * img.height / height));
@@ -38,9 +40,9 @@ function downsample(img, width, height) {
       const sx = Math.min(img.width - 1, Math.floor((x + 0.5) * img.width / width));
       const si = (sy * img.width + sx) * 4;
       const di = (y * width + x) * 4;
-      out[di] = img.data[si];
-      out[di + 1] = img.data[si + 1];
-      out[di + 2] = img.data[si + 2];
+      out[di] = img.data[si] & colorMask;
+      out[di + 1] = img.data[si + 1] & colorMask;
+      out[di + 2] = img.data[si + 2] & colorMask;
       out[di + 3] = 255;
     }
   }
@@ -174,7 +176,10 @@ async function earthPng() {
 async function globeEarthPng() {
   if (!globePromise) globePromise = earthPng().then(body => {
     const image = decodePng(body, { maxPixels: TARGET_W * TARGET_H + 1 });
-    return downsample(image, GLOBE_W, GLOBE_H);
+    const compact = downsample(image, GLOBE_W, GLOBE_H, GLOBE_COLOR_MASK);
+    lastBrowserBytes = compact.length;
+    diagnostics.debug('earth', 'Prepared bandwidth-optimized browser Earth texture.', { width: GLOBE_W, height: GLOBE_H, bytes: compact.length, rgbBitsPerChannel: 6 });
+    return compact;
   }).catch(error => {
     globePromise = null;
     throw error;
@@ -188,6 +193,7 @@ async function refreshEarthTexture() {
     const body = await downloadAndCache(CACHE, 'persistent');
     texturePromise = Promise.resolve(body);
     globePromise = null;
+    lastBrowserBytes = null;
     await globeEarthPng();
     return await earthStatus();
   } catch (error) {
@@ -225,7 +231,7 @@ async function earthStatus() {
     downloadTimeoutSeconds: DOWNLOAD_TIMEOUT_MS / 1000,
     downloadAttempts: DOWNLOAD_ATTEMPTS,
     target: { width: TARGET_W, height: TARGET_H },
-    browser: { width: GLOBE_W, height: GLOBE_H }
+    browser: { width: GLOBE_W, height: GLOBE_H, format: 'image/png', bytes: lastBrowserBytes, rgbBitsPerChannel: 6 }
   };
 }
 
@@ -234,8 +240,10 @@ express.application.listen = function earthTextureListen(...args) {
   this.get('/assets/earth-blue-marble.png', async (req, res) => {
     try {
       const body = await globeEarthPng();
-      res.set('Cache-Control', 'public, max-age=86400, immutable');
+      res.set('Cache-Control', 'public, max-age=86400');
       res.set('X-Imagery-Credit', CREDIT);
+      res.set('X-QSO-Trails-Texture-Dimensions', `${GLOBE_W}x${GLOBE_H}`);
+      res.set('X-QSO-Trails-Texture-Bytes', String(body.length));
       res.type('image/png').send(body);
     } catch (error) {
       diagnostics.warn('earth', 'Browser Earth texture request returned 503.', { error: error?.message || error });
@@ -259,6 +267,9 @@ module.exports = {
   IMAGE_SEED,
   TARGET_W,
   TARGET_H,
+  GLOBE_W,
+  GLOBE_H,
+  GLOBE_COLOR_MASK,
   DOWNLOAD_TIMEOUT_MS,
   DOWNLOAD_ATTEMPTS,
   MAX_DOWNLOAD

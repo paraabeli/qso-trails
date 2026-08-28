@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>QSO Trails Admin</title>
-  <link rel="stylesheet" href="/assets/style.css">
+  <link rel="stylesheet" href="/assets/style.css?v=20260828-1">
 </head>
 <body><main>
 <h1>QSO Trails Admin</h1>
 <p>Sync Wavelog or upload ADIF, then choose exactly what the public iframe is allowed to expose.</p>
-<small id="uiBuild">Admin UI build 2026-08-26.5</small>
+<small id="uiBuild">Admin UI build 2026-08-28.1</small>
 
 <div class="cols">
 <section class="card">
@@ -92,7 +92,7 @@
 </section>
 </div>
 
-<section class="card"><iframe id="preview" title="Public QSO Trails preview" src="/embed"></iframe></section>
+<section class="card"><iframe id="preview" title="Public QSO Trails preview" src="/embed" height="620"></iframe></section>
 
 <section class="card">
   <h2>Static picture publish</h2>
@@ -112,11 +112,11 @@
     <label class="inline"><input id="staticShowContinents" type="checkbox" checked> Continent count</label>
     <label class="inline"><input id="staticShowRarity" type="checkbox" checked> Rarest worked DXCC</label>
     <label>Home grid in image<select id="staticGrid"><option value="none">Do not show</option><option value="4">4 characters</option><option value="6">6 characters</option></select></label>
-    <small id="staticGridNote">Grid display cannot be more precise than the published home-position privacy setting.</small>
+    <small id="staticGridNote">Grid is drawn directly after the station label and never includes a “4 chars/6 chars” suffix. Display precision cannot exceed the published home-position privacy setting.</small>
     <label class="inline"><input id="staticShowUpdated" type="checkbox" checked> Generated timestamp</label>
     <small>The 2:1 Blue Marble source is a texture only. A 3D globe is projected onto a circular sphere inside the card; Mercator remains a separate explicit projection.</small>
   </div>
-  <img id="staticPreview" src="/static/qrz.png?projection=globe&amp;size=qrz" alt="Static QSO Trails preview" width="640" height="500" style="display:block;max-width:100%;height:auto;border-radius:10px">
+  <img id="staticPreview" src="/static/qrz.png?projection=globe&amp;size=qrz" alt="Static QSO Trails preview" width="640" height="500">
   <h3>Static image URL / linked-image snippet</h3><pre id="staticSnippet">Loading…</pre>
   <small>The static PNG uses the sanitized public snapshot. Grid text is clipped to the configured public home precision, and per-QSO private fields are never added to the image.</small>
 </section>
@@ -129,7 +129,8 @@
   <h3>Recent application log</h3><pre id="diagnosticLog">Loading…</pre>
 </section>
 </main>
-<script src="/assets/dom-safety.js?v=20260826-5"></script>
-<script src="/assets/admin-privacy.js?v=20260826-5"></script>
-<script src="/assets/admin.js?v=20260826-5"></script>
+<script src="/assets/dom-safety.js?v=20260828-1"></script>
+<script src="/assets/admin-privacy.js?v=20260828-1"></script>
+<script src="/assets/admin.js?v=20260828-1"></script>
+<script src="/assets/admin-lotw.js?v=20260828-1"></script>
 </body></html>

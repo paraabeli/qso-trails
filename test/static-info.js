@@ -2,13 +2,19 @@
 
 const assert = require('assert/strict');
 const { encodePng, decodePng } = require('../png-codec');
-const { applyStaticInfo, publicGrid } = require('../static-info');
+const { applyStaticInfo, publicGrid, stationLine, NASA_CREDIT_TEXT } = require('../static-info');
 
 assert.deepEqual(publicGrid({ homeGrid: 'KP20AB', homePrecision: 'grid4' }, '6'), { value: 'KP20', length: 4, requested: 6, limited: true });
 assert.deepEqual(publicGrid({ homeGrid: 'KP20AB', homePrecision: 'grid6' }, '6'), { value: 'KP20AB', length: 6, requested: 6, limited: false });
 assert.deepEqual(publicGrid({ homeGrid: 'KP20AB', homePrecision: 'exact' }, '4'), { value: 'KP20', length: 4, requested: 4, limited: false });
 assert.equal(publicGrid({ homeGrid: 'invalid', homePrecision: 'exact' }, '6'), null);
 assert.equal(publicGrid({ homeGrid: 'KP20AB', homePrecision: 'exact' }, 'none'), null);
+
+assert.equal(stationLine({ settings: { stationName: 'TEST' } }, { showName: true, gridPrecision: '6' }, { homeGrid: 'KP20AB', homePrecision: 'grid4' }), 'TEST KP20');
+assert.equal(stationLine({ settings: { stationName: 'TEST' } }, { showName: true, gridPrecision: '6' }, { homeGrid: 'KP20AB', homePrecision: 'grid6' }), 'TEST KP20AB');
+assert.equal(stationLine({ settings: { stationName: 'TEST' } }, { showName: false, gridPrecision: '4' }, { homeGrid: 'KP20AB', homePrecision: 'grid4' }), 'KP20');
+assert.equal(stationLine({ settings: { stationName: 'TEST' } }, { showName: true, gridPrecision: 'none' }, { homeGrid: 'KP20AB', homePrecision: 'grid6' }), 'TEST');
+assert.equal(NASA_CREDIT_TEXT, 'IMAGE BY NASA EARTH OBSERVATORY / BLUE MARBLE NEXT GENERATION');
 
 const width = 640, height = 500;
 const rgba = Buffer.alloc(width * height * 4);
@@ -32,12 +38,12 @@ const body = applyStaticInfo(base, {
   showRarity: true,
   gridPrecision: '6',
   showUpdated: false,
-  showNasaCredit: false
+  showNasaCredit: true
 }, { homeGrid: 'KP20AB', homePrecision: 'grid4' }, 'clean');
 const image = decodePng(body, { maxPixels: width * height });
 assert.equal(image.width, width);
 assert.equal(image.height, height);
-const start = (350 * width) * 4, end = (360 * width) * 4;
+const start = (350 * width) * 4, end = (375 * width) * 4;
 assert.notDeepEqual(image.data.subarray(start, end), rgba.subarray(start, end));
 
 console.log('static info tests passed');
