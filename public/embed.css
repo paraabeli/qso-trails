@@ -6,7 +6,19 @@ canvas{display:block;width:100%;height:min(620px,75vw);min-height:420px;touch-ac
 .hint{position:absolute;left:12px;bottom:10px;font-size:11px;background:#050b14aa;padding:6px;border-radius:8px}
 .legend{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px;font-size:11px}
 .legend span{display:inline-flex;align-items:center;gap:4px}
-.dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:hsl(200,85%,68%)}
+.dot[data-band="160M"]{background:hsl(280,85%,68%)}
+.dot[data-band="80M"]{background:hsl(260,85%,68%)}
+.dot[data-band="60M"]{background:hsl(235,85%,68%)}
+.dot[data-band="40M"]{background:hsl(210,85%,68%)}
+.dot[data-band="30M"]{background:hsl(185,85%,68%)}
+.dot[data-band="20M"]{background:hsl(160,85%,68%)}
+.dot[data-band="17M"]{background:hsl(130,85%,68%)}
+.dot[data-band="15M"]{background:hsl(95,85%,68%)}
+.dot[data-band="12M"]{background:hsl(65,85%,68%)}
+.dot[data-band="10M"]{background:hsl(35,85%,68%)}
+.dot[data-band="6M"]{background:hsl(10,85%,68%)}
+.dot[data-band="2M"]{background:hsl(330,85%,68%)}
 .details,.replayHud,.dxcc{margin-top:7px;font-size:12px;line-height:1.35;color:#d9e5f5}
 .dxccPanel{margin-top:7px;font-size:11px;color:#d9e5f5}
 .dxccPanel summary{cursor:pointer;font-weight:700;position:sticky;top:0;background:#050b14;padding:2px 0;z-index:1}
