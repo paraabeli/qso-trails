@@ -12,5 +12,5 @@
     "audit:prod": "npm audit --omit=dev --audit-level=high"
   },
   "engines": {"node": ">=22.0.0"},
-  "dependencies": {"express":"5.2.1","express-rate-limit":"8.6.2","multer":"2.2.0","topojson-client":"3.1.0","world-atlas":"2.0.2"}
+  "dependencies": {"express":"5.2.1","express-rate-limit":"8.6.2","multer":"2.3.0","topojson-client":"3.1.0","world-atlas":"2.0.2"}
 }
