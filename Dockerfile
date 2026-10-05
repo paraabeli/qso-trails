@@ -21,6 +21,9 @@ COPY server.js ./
 COPY qso-helpers.js ./
 COPY safe-files.js ./
 COPY security-helpers.js ./
+COPY data-dir.js ./
+COPY auth-failures.js ./
+COPY snapshot.js ./
 COPY adif-parser.js ./
 COPY privacy-guard.js ./
 COPY network-guard.js ./

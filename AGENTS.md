@@ -23,6 +23,10 @@ contracts, not suggestions; the test suite enforces most of them.
 - **`data/` is private runtime state.** Resolve its path only through
   `data-dir.js`. Tests must isolate it with `QSO_TRAILS_DATA_DIR` and must never
   read or rewrite an operator's real data.
+- **New runtime module → add it to the `Dockerfile` COPY list.** The image lists
+  each module explicitly; a missing entry only fails at container start.
+  `test/dockerfile-copies.js` enforces that every local `require()` reachable
+  from `server.js` and the preloads is copied.
 
 ## Security-sensitive changes
 
