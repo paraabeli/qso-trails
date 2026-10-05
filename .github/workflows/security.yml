@@ -22,6 +22,18 @@ jobs:
       - run: npm run check
       - run: npm run audit:prod
 
+      # The asset cache-bust stamp lives in the HTML entrypoints, not in this
+      # workflow. Resolve it once so the smoke test never hardcodes it.
+      - name: Resolve asset version
+        run: |
+          ASSET_V="$(grep -oE 'embed\.css\?v=[0-9A-Za-z._-]+' public/embed.html | head -1 | cut -d= -f2)"
+          ASSET_LABEL="$(grep -oE 'Admin UI build [0-9A-Za-z._-]+' public/admin.html | head -1 | sed 's/^Admin UI build //')"
+          test -n "$ASSET_V"
+          test -n "$ASSET_LABEL"
+          echo "Resolved asset version: $ASSET_V (label $ASSET_LABEL)"
+          echo "ASSET_V=$ASSET_V" >> "$GITHUB_ENV"
+          echo "ASSET_LABEL=$ASSET_LABEL" >> "$GITHUB_ENV"
+
       - name: Prepare CI environment files
         run: |
           cp .env.production.example .env.production
@@ -80,41 +92,41 @@ jobs:
           grep -qi '^cache-control: no-store' public.headers
           test "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/assets/admin.html)" = "404"
 
-          docker exec qso-trails-ci grep -Fq 'Admin UI build 2026-08-28.1' /app/public/admin.html
-          docker exec qso-trails-ci grep -Fq 'style.css?v=20260828-1' /app/public/admin.html
-          docker exec qso-trails-ci grep -Fq 'admin.js?v=20260828-1' /app/public/admin.html
-          docker exec qso-trails-ci grep -Fq 'admin-lotw.js?v=20260828-1' /app/public/admin.html
+          docker exec qso-trails-ci grep -Fq "Admin UI build $ASSET_LABEL" /app/public/admin.html
+          docker exec qso-trails-ci grep -Fq "style.css?v=$ASSET_V" /app/public/admin.html
+          docker exec qso-trails-ci grep -Fq "admin.js?v=$ASSET_V" /app/public/admin.html
+          docker exec qso-trails-ci grep -Fq "admin-lotw.js?v=$ASSET_V" /app/public/admin.html
           docker exec qso-trails-ci grep -Fq 'id="staticShowLotw"' /app/public/admin.html
           docker exec qso-trails-ci grep -Fq 'id="staticGrid"' /app/public/admin.html
           docker exec qso-trails-ci grep -Fq 'id="diagnosticsCard"' /app/public/admin.html
           docker exec qso-trails-ci sh -lc '! grep -Eq "[[:space:]]style=" /app/public/admin.html'
 
-          docker exec qso-trails-ci grep -Fq 'embed.css?v=20260828-1' /app/public/embed.html
-          docker exec qso-trails-ci grep -Fq 'theme-pack.js?v=20260828-1' /app/public/embed.html
-          docker exec qso-trails-ci grep -Fq 'globe.js?v=20260828-1' /app/public/embed.html
-          docker exec qso-trails-ci grep -Fq 'embed-extras.js?v=20260828-1' /app/public/embed.html
-          docker exec qso-trails-ci grep -Fq 'embed-lotw.js?v=20260828-1' /app/public/embed.html
+          docker exec qso-trails-ci grep -Fq "embed.css?v=$ASSET_V" /app/public/embed.html
+          docker exec qso-trails-ci grep -Fq "theme-pack.js?v=$ASSET_V" /app/public/embed.html
+          docker exec qso-trails-ci grep -Fq "globe.js?v=$ASSET_V" /app/public/embed.html
+          docker exec qso-trails-ci grep -Fq "embed-extras.js?v=$ASSET_V" /app/public/embed.html
+          docker exec qso-trails-ci grep -Fq "embed-lotw.js?v=$ASSET_V" /app/public/embed.html
           docker exec qso-trails-ci sh -lc '! grep -Eqi "<style([[:space:]>])" /app/public/embed.html'
           docker exec qso-trails-ci sh -lc '! grep -Eq "[[:space:]]style=" /app/public/embed.html'
           docker exec qso-trails-ci sh -lc '! grep -Fq ".style." /app/public/theme-pack.js'
           docker exec qso-trails-ci sh -lc '! grep -Fq ".style." /app/public/embed-extras.js'
           docker exec qso-trails-ci sh -lc '! grep -Fq ".style." /app/public/globe.js'
 
-          curl -fsS -D admin-js.headers 'http://127.0.0.1:3000/assets/admin.js?v=20260828-1' -o /dev/null
+          curl -fsS -D admin-js.headers "http://127.0.0.1:3000/assets/admin.js?v=$ASSET_V" -o /dev/null
           grep -qi '^cache-control: no-store' admin-js.headers
-          test "$(curl -sS -o /dev/null -w '%{http_code}' 'http://127.0.0.1:3000/assets/embed.css?v=20260828-1')" = "200"
+          test "$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:3000/assets/embed.css?v=$ASSET_V")" = "200"
 
           test "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/api/admin/diagnostics)" = "401"
           curl -fsS -u 'admin:ci-only-long-random-password' -D diagnostics.headers 'http://127.0.0.1:3000/api/admin/diagnostics?limit=50' -o diagnostics.json
           grep -qi '^cache-control: no-store' diagnostics.headers
-          node -e "const d=require('./diagnostics.json');if(!d.earth||!Array.isArray(d.logs)||'csrfToken' in d)process.exit(1)"
+          node -e "const d=require('./diagnostics.json');if(!d.earth||!d.lotw||!Array.isArray(d.logs)||'csrfToken' in d)process.exit(1)"
 
           docker exec qso-trails-ci node -e "const fs=require('fs'),{encodePng}=require('/app/png-codec');const w=4096,h=2048,p=Buffer.alloc(w*h*4);for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=(y*w+x)*4;p[i]=(x*17+y*3)&255;p[i+1]=(x*5+y*11)&255;p[i+2]=(x*7+y*13)&255;p[i+3]=255}fs.writeFileSync('/app/data/earth-blue-marble-ng-200412.png',encodePng(w,h,p))"
-          curl -fsSI 'http://127.0.0.1:3000/assets/earth-blue-marble.png?v=20260828-1' > earth.headers
+          curl -fsSI "http://127.0.0.1:3000/assets/earth-blue-marble.png?v=$ASSET_V" > earth.headers
           grep -qi '^content-type: image/png' earth.headers
           grep -qi '^x-qso-trails-texture-dimensions: 1280x640' earth.headers
           grep -qi '^x-qso-trails-texture-bytes:' earth.headers
-          curl -fsS 'http://127.0.0.1:3000/assets/earth-blue-marble.png?v=20260828-1' -o earth.png
+          curl -fsS "http://127.0.0.1:3000/assets/earth-blue-marble.png?v=$ASSET_V" -o earth.png
           test "$(xxd -p -l 8 earth.png)" = "89504e470d0a1a0a"
           test "$(stat -c%s earth.png)" -lt 4194304
           node - <<'NODE'
@@ -174,13 +186,13 @@ jobs:
           NODE
 
           curl -fsS 'http://127.0.0.1:3000/embed?theme=earth&dxccrare=0&dxccmode=0' -o earth-embed.html
-          grep -Fq '/assets/embed.css?v=20260828-1' earth-embed.html
-          grep -Fq '/assets/theme-pack.js?v=20260828-1' earth-embed.html
-          grep -Fq '/assets/globe.js?v=20260828-1' earth-embed.html
-          grep -Fq '/assets/embed-extras.js?v=20260828-1' earth-embed.html
-          grep -Fq '/assets/embed-lotw.js?v=20260828-1' earth-embed.html
+          grep -Fq "/assets/embed.css?v=$ASSET_V" earth-embed.html
+          grep -Fq "/assets/theme-pack.js?v=$ASSET_V" earth-embed.html
+          grep -Fq "/assets/globe.js?v=$ASSET_V" earth-embed.html
+          grep -Fq "/assets/embed-extras.js?v=$ASSET_V" earth-embed.html
+          grep -Fq "/assets/embed-lotw.js?v=$ASSET_V" earth-embed.html
           ! grep -Eqi '<style([[:space:]>])' earth-embed.html
-          test "$(curl -sS -o /dev/null -w '%{http_code}' 'http://127.0.0.1:3000/assets/theme-pack.js?v=20260828-1')" = "200"
+          test "$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:3000/assets/theme-pack.js?v=$ASSET_V")" = "200"
 
       - name: Clean up smoke container
         if: always()

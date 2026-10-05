@@ -108,8 +108,11 @@ The repository now has a deliberately small canonical documentation set:
 
 - [Operations](docs/OPERATIONS.md) — prod/dev/external-edge deployment, Wavelog/LoTW, themes/Earth imagery, logging, backups and upgrades.
 - [Architecture](docs/ARCHITECTURE.md) — runtime composition, data flow and privacy invariants.
+- [Preload contract](docs/PRELOAD_CONTRACT.md) — the load-order contract for the privacy preloads and the explicit public-snapshot pipeline.
 - [Development](docs/DEVELOPMENT.md) — repository layout, tests and change checklist.
+- [DXCC rarity & NASA imagery](docs/DXCC_RARITY_AND_NASA_IMAGERY.md) — Club Log rarity source and Blue Marble imagery handling.
 - [Security](SECURITY.md) — threat model, deployment assumptions and vulnerability reporting.
+- [Agent rules](AGENTS.md) — project contracts for changes.
 
 CI/security workflow: [.github/workflows/security.yml](.github/workflows/security.yml).
 
