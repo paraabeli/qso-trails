@@ -4,7 +4,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
 
-const DATA = path.join(__dirname, 'data');
+const { DATA_DIR: DATA } = require('./data-dir');
 const CACHE = path.join(DATA, 'clublog-most-wanted.json');
 const SOURCE = 'https://clublog.org/mostwanted.php?api=1';
 const SOURCE_DOC = 'https://clublog.freshdesk.com/support/solutions/articles/76225-most-wanted-list-json-api';

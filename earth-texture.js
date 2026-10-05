@@ -6,8 +6,8 @@ const crypto = require('crypto');
 const express = require('express');
 const { decodePng, encodePng } = require('./png-codec');
 const diagnostics = require('./diagnostics');
+const { DATA_DIR: DATA } = require('./data-dir');
 
-const DATA = path.join(__dirname, 'data');
 const CACHE = path.join(DATA, 'earth-blue-marble-ng-200412.png');
 const IMAGE_SEED_DIR = path.join(__dirname, 'earth-seed');
 const IMAGE_SEED = path.join(IMAGE_SEED_DIR, 'earth-blue-marble-ng-200412.png');

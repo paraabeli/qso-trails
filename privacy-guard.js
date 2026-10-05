@@ -5,11 +5,16 @@ const path = require('path');
 const express = require('express');
 const { exactOrAtomicTemp } = require('./safe-files');
 
-const DATA = path.join(__dirname, 'data');
+const DATA = require('./data-dir').DATA_DIR;
+const { publicQsoFields } = require('./qso-helpers');
 const SETTINGS_FILE = path.join(DATA, 'settings.json');
 const PUBLIC_SNAPSHOT_FILE = path.join(DATA, 'public-snapshot.json');
 const originalReadFile = fs.readFile.bind(fs);
 const originalWriteFile = fs.writeFile.bind(fs);
+// Captured before any preload patch is installed, so this is the true native
+// writer. snapshot.js uses it for the explicit publication pipeline; the
+// patched fs.writeFile below stays installed as a fail-closed backstop.
+const nativeWriteFile = originalWriteFile;
 const originalGet = express.application.get;
 const originalUse = express.application.use;
 
@@ -31,15 +36,14 @@ async function readSettings() {
   }
 }
 
+// Fail-closed whitelist: rebuild the QSO from the shared public field allowlist
+// rather than blacklisting known-private keys, so a newly added private field
+// can never leak by omission.
 function hardenQso(qso, settings) {
-  const q = { ...(qso || {}) };
-  for (const key of ['source', 'sourceId', 'lotwConfirmed', 'lotwConfirmedAt', 'dxcc', 'country', 'cont']) delete q[key];
-  if (settings.showCallsigns !== true) delete q.call;
-  if (settings.showMode !== true) delete q.mode;
-  if (settings.showDates !== true) delete q.date;
-  if (settings.showTimes !== true) delete q.time;
-  if (settings.showRemoteGrid !== true) delete q.grid;
-  return q;
+  const source = qso || {};
+  const out = {};
+  for (const field of publicQsoFields(settings)) if (field in source) out[field] = source[field];
+  return out;
 }
 
 async function hardenPublicSnapshot(serialized) {
@@ -79,6 +83,10 @@ async function hardenPublicSnapshot(serialized) {
   delete snapshot.settings.maxPaths;
 
   if (settings.showDxccStats !== true && snapshot.stats) snapshot.stats.dxcc = null;
+
+  // Station/callsign label is opt-in; the private label never reaches the
+  // public snapshot unless publishStationName is explicitly true.
+  if (settings.publishStationName !== true && snapshot.settings) delete snapshot.settings.stationName;
 
   return JSON.stringify(snapshot, null, 2);
 }
@@ -146,4 +154,4 @@ express.application.use = function privacyUse(route, ...handlers) {
   return originalUse.call(this, route, ...handlers);
 };
 
-module.exports = { hardenPublicSnapshot, staticRateLimit };
+module.exports = { hardenPublicSnapshot, staticRateLimit, nativeWriteFile };

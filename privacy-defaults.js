@@ -5,10 +5,8 @@ const path = require('path');
 const express = require('express');
 const { exactOrAtomicTemp } = require('./safe-files');
 
-const DATA = path.join(__dirname, 'data');
+const DATA = require('./data-dir').DATA_DIR;
 const SETTINGS_FILE = path.join(DATA, 'settings.json');
-const PUBLIC_SNAPSHOT_FILE = path.join(DATA, 'public-snapshot.json');
-const originalReadFile = fs.readFile.bind(fs);
 const originalWriteFile = fs.writeFile.bind(fs);
 const originalGet = express.application.get;
 const originalPost = express.application.post;
@@ -22,28 +20,17 @@ function privacySettings(value = {}) {
   };
 }
 
-async function storedPrivacySettings() {
-  try {
-    const parsed = JSON.parse(await originalReadFile(SETTINGS_FILE, 'utf8'));
-    return privacySettings(parsed || {});
-  } catch (error) {
-    if (error?.code === 'ENOENT' || error?.name === 'SyntaxError') return privacySettings({});
-    throw error;
-  }
-}
-
+// Persist the opt-in privacy defaults alongside every settings write so the
+// stored settings always carry an explicit publishStationName/showDxccStats
+// value. The public-snapshot consequence of these flags is enforced by
+// privacy-guard.hardenPublicSnapshot on the explicit publication path; this
+// write patch only guarantees the defaults are stored.
 fs.writeFile = async function privacyDefaultsWrite(file, data, options) {
   if (exactOrAtomicTemp(file, SETTINGS_FILE) && typeof data === 'string') {
     const parsed = JSON.parse(data);
     const current = privacySettings(parsed);
     data = JSON.stringify({ ...parsed, ...current, ...(pendingPrivacy || {}) }, null, 2);
     pendingPrivacy = null;
-  } else if (exactOrAtomicTemp(file, PUBLIC_SNAPSHOT_FILE) && typeof data === 'string') {
-    const parsed = JSON.parse(data);
-    const settings = await storedPrivacySettings();
-    if (parsed?.settings && settings.publishStationName !== true) delete parsed.settings.stationName;
-    if (settings.showDxccStats !== true && parsed?.stats) parsed.stats.dxcc = null;
-    data = JSON.stringify(parsed, null, 2);
   }
   return originalWriteFile(file, data, options);
 };

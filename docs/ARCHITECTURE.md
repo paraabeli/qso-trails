@@ -13,7 +13,7 @@ static-theme-pack.js
 server.js
 ```
 
-`static-publish.js` installs the LoTW feature layer. `static-theme-pack.js` adds extra static themes and imports the bounded Earth-texture service; it does not widen the public snapshot.
+`static-publish.js` installs the LoTW feature layer. `static-theme-pack.js` adds extra static themes and imports the bounded Earth-texture service; it does not widen the public snapshot. The load-order contract for these preloads is documented in `docs/PRELOAD_CONTRACT.md` and enforced by `test/preload-order.js`.
 
 ## Data flow
 
@@ -40,10 +40,13 @@ Public renderers consume only the sanitized snapshot. Raw QSOs and Wavelog crede
 
 ## Main modules
 
-- `server.js` — Express routes, settings, Wavelog/ADIF import and base snapshot logic.
-- `qso-helpers.js` — pure shared QSO helpers.
+- `server.js` — Express routes, settings, Wavelog/ADIF import and the explicit public-snapshot publish pipeline.
+- `data-dir.js` — single source of truth for the private data directory.
+- `snapshot.js` — public-snapshot build and explicit publication (guard + native write).
+- `qso-helpers.js` — pure shared QSO helpers and the public field allowlist.
 - `network-guard.js` — trusted-proxy and Wavelog network/SSRF/resource controls.
 - `privacy-defaults.js` — opt-in station-name/DXCC privacy defaults.
+- `auth-failures.js` — bounded admin failed-authentication tracker.
 - `lotw-feature.js` — LoTW confirmation state/filtering/count integration.
 - `privacy-guard.js` — final public sanitization, fail-closed checks, no-store and static rate limiting.
 - `static-publish.js` / `static-render.js` — core static image publication/rendering.
@@ -51,7 +54,7 @@ Public renderers consume only the sanitized snapshot. Raw QSOs and Wavelog crede
 - `earth-texture.js` / `png-codec.js` — bounded NASA image fetch/cache/PNG handling.
 - `public/theme-pack.js` / `public/admin-theme-pack.js` — extra embed/Admin theme UI.
 - `public/` — browser code; no direct access to private data/Wavelog credentials.
-- `test/` — privacy, network, helper, default and PNG regression tests.
+- `test/` — unit regressions plus `test/integration-server.js`, which boots the real preloaded server.
 
 ## Earth imagery boundary
 

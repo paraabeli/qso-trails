@@ -13,8 +13,10 @@ const worldAtlas = require('world-atlas/countries-50m.json');
 const { allowedExactFile } = require('./safe-files');
 const { parseCoord, safeEqual } = require('./security-helpers');
 const { parseAdif } = require('./adif-parser');
-const { distanceKm, maidenheadToLatLon, positionAtPrecision, publicHome, qsoSortKey, qsoTimestamp, sanitizePublicQso } = require('./qso-helpers');
-const { getMostWanted, topRarestWorked } = require('./dxcc-rarity');
+const { maidenheadToLatLon } = require('./qso-helpers');
+const { createAuthFailureTracker } = require('./auth-failures');
+const { buildPublicSnapshot, publishPublicSnapshot, publicExposureSummary, setMetrics } = require('./snapshot');
+const { getLotwState } = require('./lotw-feature');
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -28,7 +30,7 @@ const ALLOW_PRIVATE_WAVELOG = process.env.ALLOW_PRIVATE_WAVELOG === 'true';
 const ADMIN_ALLOWED_IPS = String(process.env.ADMIN_ALLOWED_IPS || '').split(',').map(v => v.trim()).filter(Boolean);
 const EMBED_FRAME_ANCESTORS = String(process.env.EMBED_FRAME_ANCESTORS || "'self' https://qrz.com https://*.qrz.com").trim();
 
-const DATA = path.join(__dirname, 'data');
+const DATA = require('./data-dir').DATA_DIR;
 const PUBLIC = path.join(__dirname, 'public');
 const QSO_FILE = path.join(DATA, 'qsos.json');
 const SETTINGS_FILE = path.join(DATA, 'settings.json');
@@ -136,24 +138,15 @@ function adminNetworkAllowed(req) {
   return ADMIN_ALLOWED_IPS.some(rule => ipMatchesRule(ip, rule));
 }
 
-const authFailures = new Map();
-function authFailureState(ip) {
-  const now = Date.now();
-  const current = authFailures.get(ip);
-  if (!current || now - current.startedAt > 15 * 60_000) {
-    const fresh = { startedAt: now, count: 0 };
-    authFailures.set(ip, fresh);
-    return fresh;
-  }
-  return current;
-}
+const authTracker = createAuthFailureTracker();
 
 function adminAuth(req, res, next) {
   if (!adminNetworkAllowed(req)) return res.status(403).send('Admin access is not allowed from this address.');
+  authTracker.prune();
   const ip = requestIp(req);
-  const failures = authFailureState(ip);
+  const failures = authTracker.state(ip);
   if (failures.count >= 10) {
-    res.set('Retry-After', String(Math.ceil((failures.startedAt + 15 * 60_000 - Date.now()) / 1000)));
+    res.set('Retry-After', String(Math.ceil((failures.startedAt + authTracker.WINDOW_MS - Date.now()) / 1000)));
     return res.status(429).send('Too many failed admin authentication attempts.');
   }
 
@@ -175,11 +168,10 @@ function adminAuth(req, res, next) {
   const password = colon >= 0 ? decoded.slice(colon + 1) : '';
   if (!safeEqual(user, ADMIN_USER) || !safeEqual(password, ADMIN_PASSWORD)) {
     failures.count++;
-    authFailures.set(ip, failures);
     res.set('WWW-Authenticate', 'Basic realm="QSO Trails Admin"');
     return res.status(401).send('Invalid credentials.');
   }
-  authFailures.delete(ip);
+  authTracker.failures.delete(ip);
   next();
 }
 
@@ -229,7 +221,7 @@ function adminDocumentHeaders(req, res, next) {
 
 function embedDocumentHeaders(req, res, next) {
   res.set('Cache-Control', 'public, max-age=300');
-  res.set('Content-Security-Policy', `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors ${EMBED_FRAME_ANCESTORS}; object-src 'none'; base-uri 'none'; form-action 'none'`);
+  res.set('Content-Security-Policy', `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors ${EMBED_FRAME_ANCESTORS}; object-src 'none'; base-uri 'none'; form-action 'none'`);
   next();
 }
 
@@ -303,129 +295,27 @@ function sanitizeSettings(input, meta) {
   };
 }
 
-function filterAllowedQsos(qsos, settings) {
-  const bands = new Set(settings.bands || []);
-  const modes = new Set(settings.modes || []);
-  return qsos.filter(q => bands.has(q.band) && modes.has(q.mode));
-}
-
-function publicDxccStats(qsos, settings, rarityRanking = null) {
-  if (!settings.showDxccStats) return null;
-  const withMeta = qsos.filter(q => q.dxcc || q.country || q.cont);
-  const entities = new Set(withMeta.map(q => String(q.dxcc || '')).filter(Boolean));
-  const countries = new Set(withMeta.map(q => String(q.country || '')).filter(Boolean));
-  const continents = new Set(withMeta.map(q => String(q.cont || '')).filter(Boolean));
-  const countMap = (key, filter = () => true) => {
-    const map = new Map();
-    for (const q of withMeta) {
-      if (!filter(q)) continue;
-      const value = String(q[key] || '').trim();
-      if (value) map.set(value, (map.get(value) || 0) + 1);
-    }
-    return [...map.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([name, qsos]) => ({ name, qsos }));
-  };
-  const entityMap = new Map();
-  const bandMap = new Map();
-  const modeMap = new Map();
-  const firstWorked = new Map();
-  const home = publicHome(settings);
-  let farthest = null;
-  for (const q of withMeta) {
-    const id = String(q.dxcc || '').trim();
-    if (id) {
-      const current = entityMap.get(id) || { dxcc: id, country: String(q.country || '').trim(), qsos: 0 };
-      current.qsos++;
-      if (!current.country && q.country) current.country = String(q.country).trim();
-      entityMap.set(id, current);
-      if (q.band) {
-        const b = bandMap.get(q.band) || { qsos: 0, entities: new Set() };
-        b.qsos++; b.entities.add(id); bandMap.set(q.band, b);
-      }
-      if (settings.showMode && q.mode) {
-        const m = modeMap.get(q.mode) || { qsos: 0, entities: new Set() };
-        m.qsos++; m.entities.add(id); modeMap.set(q.mode, m);
-      }
-      const ts = qsoTimestamp(q);
-      if (settings.showDates && ts) {
-        const previous = firstWorked.get(id);
-        if (!previous || ts < previous.ts) firstWorked.set(id, { ts, dxcc: id, country: String(q.country || '').trim() });
-      }
-      if (home) {
-        const p = positionAtPrecision(q.lat, q.lon, q.grid, settings.remotePrecision);
-        const km = distanceKm(home, p);
-        if (!farthest || km > farthest.distanceKm) farthest = { dxcc: id, country: String(q.country || '').trim(), distanceKm: Math.round(km) };
-      }
-    }
-  }
-  const topDxcc = [...entityMap.values()].sort((a, b) => b.qsos - a.qsos || a.dxcc.localeCompare(b.dxcc, undefined, { numeric: true })).slice(0, 10);
-  const byBand = [...bandMap.entries()].map(([band, value]) => ({ band, qsos: value.qsos, entities: value.entities.size })).sort((a, b) => b.entities - a.entities || b.qsos - a.qsos || a.band.localeCompare(b.band, undefined, { numeric: true }));
-  const byMode = settings.showMode ? [...modeMap.entries()].map(([mode, value]) => ({ mode, qsos: value.qsos, entities: value.entities.size })).sort((a, b) => b.entities - a.entities || b.qsos - a.qsos || a.mode.localeCompare(b.mode)) : null;
-  const newestFirstWorked = settings.showDates ? [...firstWorked.values()].sort((a, b) => b.ts - a.ts)[0] || null : null;
-  return {
-    metadataAvailable: withMeta.length > 0,
-    entities: entities.size,
-    countries: countries.size,
-    continents: continents.size,
-    byContinent: countMap('cont'),
-    topDxcc,
-    rarestWorked: topRarestWorked(withMeta, rarityRanking, 3),
-    raritySource: rarityRanking ? {
-      name: rarityRanking.source,
-      fetchedAt: rarityRanking.fetchedAt,
-      stale: rarityRanking.stale === true
-    } : null,
-    byBand,
-    byMode,
-    farthest,
-    newestFirstWorked: newestFirstWorked ? { dxcc: newestFirstWorked.dxcc, country: newestFirstWorked.country, date: new Date(newestFirstWorked.ts).toISOString().slice(0, 10) } : null
-  };
-}
-
-function publicExposureSummary(settings, qsoCount, returnedQsos) {
-  return {
-    qsoCount,
-    returnedQsos,
-    required: ['approximate QSO coordinates', 'band'],
-    optional: {
-      callsign: settings.showCallsigns,
-      mode: settings.showMode,
-      date: settings.showDates,
-      time: settings.showTimes,
-      remoteGrid: settings.showRemoteGrid,
-      dxccAggregates: settings.showDxccStats
-    },
-    homePrecision: settings.homePrecision,
-    remotePrecision: settings.remotePrecision
-  };
-}
-
+// Explicit publication pipeline: build the LoTW-aware payload (snapshot.js),
+// run the fail-closed privacy guard exactly once, then write the hardened
+// serialization. See docs/PRELOAD_CONTRACT.md for the full contract.
 async function rebuildPublicSnapshot() {
   const { qsos, settings } = await getState();
-  const allowed = filterAllowedQsos(qsos, settings).sort((a, b) => qsoSortKey(b).localeCompare(qsoSortKey(a)));
-  const limited = allowed.slice(0, settings.maxPaths);
-  const rarityRanking = settings.showDxccStats ? await getMostWanted() : null;
-  const payload = {
-    version: 4,
-    settings: {
-      stationName: settings.stationName,
-      home: publicHome(settings),
-      autoRotate: settings.autoRotate,
-      showStats: settings.showStats,
-      maxPaths: settings.maxPaths
-    },
-    qsoCount: allowed.length,
-    returnedQsos: limited.length,
-    stats: { dxcc: publicDxccStats(allowed, settings, rarityRanking) },
-    qsos: limited.map(q => sanitizePublicQso(q, settings))
-  };
-  await writeJson(PUBLIC_SNAPSHOT_FILE, payload);
-  const body = JSON.stringify(payload);
+  const lotwState = await getLotwState();
+  const payload = await buildPublicSnapshot({ qsos, settings, confirmations: lotwState.confirmations });
+  const body = await publishPublicSnapshot(payload);
+  const data = JSON.parse(body);
   publicCache = {
-    data: payload,
+    data,
     body,
     etag: `"${crypto.createHash('sha256').update(body).digest('base64url')}"`,
     summary: publicExposureSummary(settings, payload.qsoCount, payload.returnedQsos)
   };
+  setMetrics({
+    allQsoCount: payload.allQsoCount,
+    lotwCount: payload.lotwCount,
+    qsoCount: payload.qsoCount,
+    returnedQsos: payload.returnedQsos
+  });
   return publicCache;
 }
 

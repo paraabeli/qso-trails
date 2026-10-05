@@ -3,6 +3,7 @@
 const express = require('express');
 const diagnostics = require('./diagnostics');
 const { earthStatus } = require('./earth-texture');
+const { lotwStatus } = require('./lotw-feature');
 
 const originalConsole = {
   log: console.log.bind(console),
@@ -53,6 +54,7 @@ express.application.listen = function diagnosticsListen(...args) {
           heapUsedBytes: process.memoryUsage().heapUsed
         },
         earth: await earthStatus(),
+        lotw: lotwStatus(),
         logs: diagnostics.recent(limit)
       });
     } catch (error) {

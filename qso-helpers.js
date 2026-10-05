@@ -54,14 +54,28 @@ function distanceKm(a, b) {
   return 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
 
+// The single source of truth for which QSO fields may ever reach the public
+// snapshot. `band`, the rounded `lat`/`lon` required to draw a path, are always
+// public; every other field is an explicit per-station opt-in. Both the builder
+// (sanitizePublicQso) and the fail-closed guard (privacy-guard hardenQso) derive
+// from this list so the two can never disagree about the public surface.
+const PUBLIC_QSO_BASE_FIELDS = Object.freeze(['band', 'lat', 'lon']);
+
+function publicQsoFields(settings = {}) {
+  const fields = [...PUBLIC_QSO_BASE_FIELDS];
+  if (settings.showMode === true) fields.push('mode');
+  if (settings.showCallsigns === true) fields.push('call');
+  if (settings.showDates === true) fields.push('date');
+  if (settings.showTimes === true) fields.push('time');
+  if (settings.showRemoteGrid === true) fields.push('grid');
+  return fields;
+}
+
 function sanitizePublicQso(q, settings) {
   const p = positionAtPrecision(q.lat, q.lon, q.grid, settings.remotePrecision);
-  const out = { band: q.band, lat: p.lat, lon: p.lon };
-  if (settings.showMode) out.mode = q.mode;
-  if (settings.showCallsigns) out.call = q.call;
-  if (settings.showDates) out.date = q.date;
-  if (settings.showTimes) out.time = q.time;
-  if (settings.showRemoteGrid) out.grid = q.grid;
+  const candidate = { band: q.band, lat: p.lat, lon: p.lon, mode: q.mode, call: q.call, date: q.date, time: q.time, grid: q.grid };
+  const out = {};
+  for (const field of publicQsoFields(settings)) out[field] = candidate[field];
   return out;
 }
 
@@ -70,6 +84,7 @@ module.exports = {
   maidenheadToLatLon,
   positionAtPrecision,
   publicHome,
+  publicQsoFields,
   qsoSortKey,
   qsoTimestamp,
   sanitizePublicQso

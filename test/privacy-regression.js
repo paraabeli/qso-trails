@@ -3,8 +3,14 @@
 const assert = require('assert/strict');
 const fs = require('fs/promises');
 const path = require('path');
+const os = require('os');
 
-const DATA = path.join(__dirname, '..', 'data');
+// Isolate the private data directory so a local test run can never read or
+// rewrite an operator's real settings.json / public-snapshot.json.
+const isolatedDataDir = !process.env.QSO_TRAILS_DATA_DIR;
+if (isolatedDataDir) process.env.QSO_TRAILS_DATA_DIR = require('fs').mkdtempSync(path.join(os.tmpdir(), 'qso-trails-privacy-'));
+
+const { DATA_DIR: DATA } = require('../data-dir');
 const SETTINGS = path.join(DATA, 'settings.json');
 const { hardenPublicSnapshot, staticRateLimit } = require('../privacy-guard');
 
@@ -130,10 +136,20 @@ function runStaticRateLimit(req) {
     out = await hardened(fixture({ settings: { ...fixture().settings, lotwFilter: 'confirmed' } }));
     assert.equal(Array.isArray(out.qsos), true);
 
+    // Station/callsign label is opt-in (enforced by privacy-guard).
+    await writeSettings({ embedCount: 'qso' });
+    out = await hardened(fixture());
+    assert.equal('stationName' in out.settings, false, 'station label must be private by default');
+
+    await writeSettings({ embedCount: 'qso', publishStationName: true });
+    out = await hardened(fixture());
+    assert.equal(out.settings.stationName, 'PUBLIC STATION', 'station label must publish only when opted in');
+
     console.log('privacy regression tests passed');
   } finally {
     if (previous) await fs.writeFile(SETTINGS, previous);
     else await fs.rm(SETTINGS, { force: true });
+    if (isolatedDataDir) await fs.rm(DATA, { recursive: true, force: true });
   }
 })().catch(error => {
   console.error(error);

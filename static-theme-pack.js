@@ -11,9 +11,10 @@ const { applyStaticInfo } = require('./static-info');
 const { decodePng, encodePng } = require('./png-codec');
 const { earthPng } = require('./earth-texture');
 const { parseStaticPreset, parseStaticWidth, staticDimensions, resizePng } = require('./static-size');
+const { DATA_DIR } = require('./data-dir');
 
-const SNAPSHOT = path.join(__dirname, 'data', 'public-snapshot.json');
-const SETTINGS = path.join(__dirname, 'data', 'settings.json');
+const SNAPSHOT = path.join(DATA_DIR, 'public-snapshot.json');
+const SETTINGS = path.join(DATA_DIR, 'settings.json');
 const world = topojson.feature(worldAtlas, worldAtlas.objects.countries);
 const EXTRA = new Set(['midnight', 'aurora', 'amber', 'mono', 'ice', 'earth']);
 const cache = new Map();

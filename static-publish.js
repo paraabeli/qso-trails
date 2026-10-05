@@ -9,9 +9,9 @@ const worldAtlas = require('world-atlas/countries-50m.json');
 const { renderStaticPng } = require('./static-render');
 const { applyStaticInfo } = require('./static-info');
 const { parseStaticPreset, parseStaticWidth, staticDimensions, resizePng } = require('./static-size');
-const { exactFile } = require('./safe-files');
+const { DATA_DIR } = require('./data-dir');
 
-const settingsFile = path.join(__dirname, 'data', 'settings.json');
+const settingsFile = path.join(DATA_DIR, 'settings.json');
 const settingsDefaults = {
   stationName: 'My Station',
   homeGrid: 'KP20',
@@ -29,23 +29,22 @@ const settingsDefaults = {
   remotePrecision: 'grid4',
   maxPaths: 2500
 };
-const baseReadFile = fs.readFile.bind(fs);
-fs.readFile = async function readFileWithSettingsDefault(file, ...args) {
+// Read settings.json, falling back to the documented defaults when the file
+// does not exist yet. This replaces the previous global fs.readFile override:
+// the default is now explicit to the one caller that needs it.
+async function readSettingsOrDefault() {
   try {
-    return await baseReadFile(file, ...args);
+    return JSON.parse(await fs.readFile(settingsFile, 'utf8'));
   } catch (error) {
-    if (error?.code !== 'ENOENT' || !exactFile(file, settingsFile)) throw error;
-    const json = JSON.stringify(settingsDefaults);
-    const option = args[0];
-    const encoding = typeof option === 'string' ? option : option?.encoding;
-    return encoding ? json : Buffer.from(json);
+    if (error?.code === 'ENOENT' || error?.name === 'SyntaxError') return { ...settingsDefaults };
+    throw error;
   }
-};
+}
 
 const { install: installLotwFeature } = require('./lotw-feature');
 installLotwFeature();
 
-const snapshotFile = path.join(__dirname, 'data', 'public-snapshot.json');
+const snapshotFile = path.join(DATA_DIR, 'public-snapshot.json');
 const world = topojson.feature(worldAtlas, worldAtlas.objects.countries);
 const cache = new Map();
 const STATIC_THEMES = new Set(['retro', 'clean', 'futuristic', 'rough']);
@@ -107,7 +106,7 @@ async function staticImage(options) {
   if (existing && existing.mtimeMs === stat.mtimeMs && existing.size === stat.size) return existing;
   const [snapshot, privateSettings] = await Promise.all([
     fs.readFile(snapshotFile, 'utf8').then(JSON.parse),
-    fs.readFile(settingsFile, 'utf8').then(JSON.parse)
+    readSettingsOrDefault()
   ]);
   const blank = renderStaticPng(snapshot, world, {
     ...options,
