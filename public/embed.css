@@ -41,3 +41,68 @@ html[data-qso-theme="mono"] #c{filter:grayscale(1) contrast(1.18)}
 html[data-qso-theme="ice"] #c{filter:saturate(.75) hue-rotate(8deg) brightness(1.08)}
 html[data-qso-theme="earth"] #wrap{background:#02050a}
 @media(max-width:620px){.hud{max-width:calc(100% - 24px)}.dxccGrid{grid-template-columns:1fr}}
+
+/* ---------------------------------------------------------------------------
+   Embed layouts. Presentation only: they rearrange the existing public HUD and
+   never change which QSO fields are public. `classic` (no attribute / unknown
+   value) keeps the original rules above byte-for-byte; every rule below is
+   scoped to a non-classic data-qso-layout value set by embed-layout.js.
+--------------------------------------------------------------------------- */
+
+/* Fluid chrome: one compact HUD that scales with the frame instead of clipping. */
+html[data-qso-layout="chrome"],
+html[data-qso-layout="chrome"] body{background:#0b1016}
+html[data-qso-layout="chrome"] #wrap{background:radial-gradient(120% 120% at 50% 0%,#0a1526 0%,#02060c 72%);border-radius:clamp(8px,1.2vw,18px)}
+html[data-qso-layout="chrome"] canvas{border-radius:inherit}
+html[data-qso-layout="chrome"] .hud{left:clamp(7px,1.4vw,18px);top:clamp(7px,1.4vw,18px);padding:clamp(7px,1.1vw,13px) clamp(9px,1.4vw,16px);border-radius:clamp(8px,1vw,14px);max-width:min(62vw,430px);backdrop-filter:blur(9px);font-size:clamp(11px,1.4vw,15px)}
+html[data-qso-layout="chrome"] .tools{right:clamp(7px,1.4vw,18px);top:clamp(7px,1.4vw,18px);border-radius:clamp(8px,1vw,14px);max-width:min(58vw,430px);font-size:clamp(11px,1.4vw,15px)}
+html[data-qso-layout="chrome"] .hint{border-radius:999px;background:#050b1499}
+html[data-qso-layout="chrome"] #replay{border-radius:clamp(8px,1vw,14px)}
+html[data-qso-layout="chrome"] .legend{gap:.4em}
+html[data-qso-layout="chrome"] .legend span{background:#ffffff0d;border:1px solid #ffffff14;border-radius:999px;padding:.16em .48em}
+@media (max-width:420px){
+  html[data-qso-layout="chrome"] .tools input{max-width:34vw}
+  html[data-qso-layout="chrome"] .hint{display:none}
+}
+
+/* Poster: dark globe beside a light editorial column; stacks when narrow. */
+html[data-qso-layout="poster"],
+html[data-qso-layout="poster"] body{background:#f2f4f6}
+html[data-qso-layout="poster"] #wrap{display:grid;grid-template-columns:1.05fr .95fr;grid-template-rows:1fr;grid-template-areas:"stage panel";aspect-ratio:16/10;background:#fff;border-radius:clamp(8px,1.2vw,18px);box-shadow:0 10px 34px rgba(12,32,44,.13)}
+html[data-qso-layout="poster"] canvas{grid-area:stage;width:100%;height:100%;min-height:0;background:#0b1a26}
+html[data-qso-layout="poster"] .hud{grid-area:panel;position:relative;left:auto;top:auto;max-width:none;max-height:none;background:#fff;color:#12232b;border-radius:0;padding:clamp(12px,2.4vw,32px);display:flex;flex-direction:column;justify-content:center;gap:.45em}
+html[data-qso-layout="poster"] .hud b{font-size:clamp(17px,3.2vw,34px);letter-spacing:-.015em;line-height:1.05}
+html[data-qso-layout="poster"] .legend span{color:#2c4650}
+html[data-qso-layout="poster"] .details,html[data-qso-layout="poster"] .replayHud,html[data-qso-layout="poster"] .dxcc,html[data-qso-layout="poster"] .dxccPanel{color:#445c66}
+html[data-qso-layout="poster"] .dxccPanel summary{background:#fff;color:#12232b}
+html[data-qso-layout="poster"] .dxccGrid>div{background:#eef2f4;color:#2c4650}
+html[data-qso-layout="poster"] .tools{grid-area:stage;position:relative;right:auto;top:auto;align-self:start;justify-self:end;margin:10px;max-width:min(52%,430px)}
+html[data-qso-layout="poster"] .hint{grid-area:stage;position:relative;left:auto;bottom:auto;align-self:start;justify-self:start;margin:10px}
+html[data-qso-layout="poster"] #replay{grid-area:stage;position:relative;right:auto;bottom:auto;align-self:end;justify-self:end;margin:10px;max-width:min(96%,620px)}
+
+/* Instrument: globe beside a dark analytics rail; stacks when narrow. */
+html[data-qso-layout="instrument"],
+html[data-qso-layout="instrument"] body{background:#05090e}
+html[data-qso-layout="instrument"] #wrap{display:grid;grid-template-columns:1.5fr 1fr;grid-template-rows:1fr;grid-template-areas:"stage panel";aspect-ratio:16/10;background:#07111a;border:1px solid #12242f;border-radius:clamp(6px,1vw,12px)}
+html[data-qso-layout="instrument"] canvas{grid-area:stage;width:100%;height:100%;min-height:0;background:radial-gradient(120% 120% at 46% 38%,#0b1d2b 0%,#040a11 78%)}
+html[data-qso-layout="instrument"] .hud{grid-area:panel;position:relative;left:auto;top:auto;max-width:none;max-height:none;background:#07111a;border-left:1px solid #12242f;border-radius:0;padding:clamp(9px,1.5vw,18px);color:#dff0ef}
+html[data-qso-layout="instrument"] .hud b{color:#e8fffb}
+html[data-qso-layout="instrument"] .details,html[data-qso-layout="instrument"] .replayHud,html[data-qso-layout="instrument"] .dxcc{color:#9fc6c2}
+html[data-qso-layout="instrument"] .dxccPanel summary{background:#07111a;color:#e8fffb;border-bottom:1px solid #12242f}
+html[data-qso-layout="instrument"] .dxccGrid>div{background:#0b1c26;color:#dff0ef}
+html[data-qso-layout="instrument"] .tools{grid-area:stage;position:relative;right:auto;top:auto;align-self:start;justify-self:end;margin:10px;border-radius:999px;max-width:min(52%,430px)}
+html[data-qso-layout="instrument"] .hint{grid-area:stage;position:relative;left:auto;bottom:auto;align-self:start;justify-self:start;margin:10px;border-radius:999px}
+html[data-qso-layout="instrument"] #replay{grid-area:stage;position:relative;right:auto;bottom:auto;align-self:end;justify-self:end;margin:10px;max-width:min(96%,620px)}
+
+@media (max-width:520px){
+  html[data-qso-layout="poster"] #wrap,
+  html[data-qso-layout="instrument"] #wrap{grid-template-columns:1fr;grid-template-rows:auto auto;grid-template-areas:"stage" "panel";aspect-ratio:auto}
+  html[data-qso-layout="poster"] canvas,
+  html[data-qso-layout="instrument"] canvas{height:auto;aspect-ratio:4/3;min-height:260px}
+  html[data-qso-layout="poster"] .hud{padding:clamp(12px,5vw,24px)}
+  html[data-qso-layout="instrument"] .hud{border-left:0;border-top:1px solid #12242f}
+  html[data-qso-layout="poster"] .hint,
+  html[data-qso-layout="instrument"] .hint{display:none}
+  html[data-qso-layout="poster"] .tools,
+  html[data-qso-layout="instrument"] .tools{max-width:calc(100% - 20px)}
+}

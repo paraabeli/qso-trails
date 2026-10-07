@@ -23,23 +23,33 @@ assert.match(globe,/i\.dataset\.band=String\(b\|\|''\)\.toUpperCase\(\)/,'legend
 assert.doesNotMatch(globe,/\.style\./,'interactive globe code must not write inline styles');
 assert.match(globe,/earth-blue-marble\.png\?v=20260828-1/,'Earth texture URL must be cache-busted after browser derivative changes');
 
+const embedLayout=read('public/embed-layout.js');
+assert.match(embedLayout,/new Set\(\['classic','chrome','poster','instrument'\]\)/,'embed layout must expose exactly the supported layouts');
+assert.match(embedLayout,/document\.documentElement\.dataset\.qsoLayout=/,'embed layout must select a layout via a CSP-safe data attribute');
+assert.match(embedLayout,/\|\|'classic'/,'unknown or missing layout must fall back to the original classic view');
+assert.doesNotMatch(embedLayout,/\.style\./,'embed layout selector must not write inline styles');
+
 const themePack=read('public/theme-pack.js');
 assert.match(themePack,/document\.documentElement\.dataset\.qsoTheme=requested/,'theme helper must only select an external-CSS theme');
 assert.doesNotMatch(themePack,/createElement\(['"]style['"]\)|style\.textContent|append\(style\)/,'theme helper must not inject CSP-blocked styles');
 
 const embedCss=read('public/embed.css');
 assert.match(embedCss,/html\[data-qso-theme="earth"\] #wrap/,'Earth theme must live in the external stylesheet');
+assert.match(embedCss,/html\[data-qso-layout="chrome"\] #wrap/,'fluid chrome layout must live in the external stylesheet');
+assert.match(embedCss,/html\[data-qso-layout="poster"\] #wrap/,'poster layout must live in the external stylesheet');
+assert.match(embedCss,/html\[data-qso-layout="instrument"\] #wrap/,'instrument layout must live in the external stylesheet');
 assert.match(embedCss,/\.dxccSectionBody/,'DXCC dynamic section styling must live in external CSS');
 assert.match(embedCss,/\.nasaCredit/,'NASA credit styling must live in external CSS');
 assert.match(embedCss,/\.dot\[data-band="20M"\]/,'band legend colors must live in external CSS');
 
 const embedHtml=read('public/embed.html');
-assert.match(embedHtml,/embed\.css\?v=20260828-1/,'interactive embed must load an external stylesheet');
-assert.match(embedHtml,/theme-pack\.js\?v=20260828-1/,'interactive embed must load the current theme selector');
-assert.match(embedHtml,/globe\.js\?v=20260828-1/,'interactive globe asset must be cache-busted after CSP and Earth delivery changes');
-assert.match(embedHtml,/embed-extras\.js\?v=20260828-1/,'embed controls must be cache-busted after CSP changes');
-assert.match(embedHtml,/embed-lotw\.js\?v=20260828-1/,'LoTW helper must be an explicit external script');
-assert.match(embedHtml,/data-qso-ui-build="2026-08-28\.1"/,'embed must expose a current build marker');
+assert.match(embedHtml,/embed\.css\?v=20261006-1/,'interactive embed must load an external stylesheet');
+assert.match(embedHtml,/theme-pack\.js\?v=20261006-1/,'interactive embed must load the current theme selector');
+assert.match(embedHtml,/globe\.js\?v=20261006-1/,'interactive globe asset must be cache-busted after CSP and Earth delivery changes');
+assert.match(embedHtml,/embed-extras\.js\?v=20261006-1/,'embed controls must be cache-busted after CSP changes');
+assert.match(embedHtml,/embed-lotw\.js\?v=20261006-1/,'LoTW helper must be an explicit external script');
+assert.match(embedHtml,/embed-layout\.js\?v=20261006-1/,'embed layout selector must be an explicit external script');
+assert.match(embedHtml,/data-qso-ui-build="2026-10-06\.1"/,'embed must expose a current build marker');
 assert.doesNotMatch(embedHtml,/<style(?:\s|>)/i,'embed document must contain no inline style element');
 assert.doesNotMatch(embedHtml,/<script(?![^>]*\bsrc=)[^>]*>/i,'embed document must contain no inline script');
 assert.doesNotMatch(embedHtml,/\sstyle=/i,'embed document must contain no inline style attribute');
@@ -87,11 +97,13 @@ assert.doesNotMatch(staticInfo,/PRIVACY LIMITED|\$\{grid\.length\} CHAR|`GRID \$
 assert.match(staticInfo,/IMAGE BY NASA EARTH OBSERVATORY \/ BLUE MARBLE NEXT GENERATION/,'static Earth output must explicitly identify NASA as the image source');
 
 const adminHtml=read('public/admin.html');
-assert.match(adminHtml,/Admin UI build 2026-08-28\.1/,'Admin must display the current build marker');
-assert.match(adminHtml,/style\.css\?v=20260828-1/,'Admin must load the current external stylesheet');
-assert.match(adminHtml,/admin\.js\?v=20260828-1/,'Admin JS must be cache-busted for CSP changes');
-assert.match(adminHtml,/admin-lotw\.js\?v=20260828-1/,'Admin LoTW helper must be an explicit external script');
+assert.match(adminHtml,/Admin UI build 2026-10-06\.1/,'Admin must display the current build marker');
+assert.match(adminHtml,/style\.css\?v=20261006-1/,'Admin must load the current external stylesheet');
+assert.match(adminHtml,/admin\.js\?v=20261006-1/,'Admin JS must be cache-busted for CSP changes');
+assert.match(adminHtml,/admin-lotw\.js\?v=20261006-1/,'Admin LoTW helper must be an explicit external script');
 assert.match(adminHtml,/id="staticGrid"/,'Static home-grid control must exist directly in Admin HTML');
+assert.match(adminHtml,/id="visualLayout"/,'Admin must expose an embed layout selector');
+assert.match(adminHtml,/value="instrument"/,'Admin layout selector must offer the instrument layout');
 assert.match(adminHtml,/never includes a “4 chars\/6 chars” suffix/,'Admin must document compact grid rendering');
 assert.doesNotMatch(adminHtml,/\sstyle=/i,'Admin document must contain no inline style attributes');
 assert.doesNotMatch(adminHtml,/<script(?![^>]*\bsrc=)[^>]*>/i,'Admin document must contain no inline script');
@@ -99,6 +111,8 @@ assert.doesNotMatch(adminHtml,/<script(?![^>]*\bsrc=)[^>]*>/i,'Admin document mu
 const admin=read('public/admin.js');
 assert.match(admin,/setHiddenFlag\(p,'dxccrare','embedDxccRarity'\)/,'core Admin must write detailed DXCC visibility flags');
 assert.match(admin,/p\.set\('lotw','1'\)/,'core Admin must support static LoTW count display');
+assert.match(admin,/p\.set\('layout',\$\('visualLayout'\)\.value\)/,'core Admin must publish the selected embed layout into the iframe URL');
+assert.match(admin,/\$\(\'visualLayout\'\)\.value=p\.layout\|\|'classic'/,'saved Admin presets must restore the embed layout');
 assert.match(admin,/Math\.round\(width\*500\/640\)/,'custom static width must increase height proportionally');
 assert.match(admin,/Browser texture:/,'Admin diagnostics must display the browser texture dimensions and bytes');
 assert.doesNotMatch(admin,/\.style\./,'Admin runtime must not write inline styles under strict CSP');

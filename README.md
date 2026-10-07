@@ -98,6 +98,24 @@ Examples:
 
 `earth` uses a locally cached NASA Visible Earth Blue Marble texture. Visitor browsers request only QSO Trails; they do not contact NASA or another map provider directly.
 
+## Embed layouts
+
+The interactive embed ships four presentation layouts, selectable in Admin (`Embed layout`) and carried in the iframe URL as `layout=`:
+
+```text
+classic     full-bleed globe with the original overlay HUD (default)
+chrome      compact HUD that scales with the frame instead of clipping
+poster      globe panel beside a light editorial column (stacks when narrow)
+instrument  globe beside a dark analytics rail (stacks when narrow)
+```
+
+```text
+/embed?layout=poster
+/embed?layout=instrument&theme=aurora
+```
+
+Layouts are presentation-only: they rearrange the existing public HUD and never widen the public payload. `classic` is the untouched original, and any unknown or missing `layout` value falls back to it.
+
 ## Logging
 
 Standalone production Caddy access logs are deliberately minimal and have a **30-day maximum retention**. The policy masks client IPs, removes query strings and request/response headers, skips asset noise, rolls daily/at a size limit, and expires logs after 720 hours. Runtime container stdout/stderr is separately size-bounded.

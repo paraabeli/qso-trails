@@ -106,11 +106,14 @@ jobs:
           docker exec qso-trails-ci grep -Fq "globe.js?v=$ASSET_V" /app/public/embed.html
           docker exec qso-trails-ci grep -Fq "embed-extras.js?v=$ASSET_V" /app/public/embed.html
           docker exec qso-trails-ci grep -Fq "embed-lotw.js?v=$ASSET_V" /app/public/embed.html
+          docker exec qso-trails-ci grep -Fq "embed-layout.js?v=$ASSET_V" /app/public/embed.html
+          docker exec qso-trails-ci grep -Fq 'id="visualLayout"' /app/public/admin.html
           docker exec qso-trails-ci sh -lc '! grep -Eqi "<style([[:space:]>])" /app/public/embed.html'
           docker exec qso-trails-ci sh -lc '! grep -Eq "[[:space:]]style=" /app/public/embed.html'
           docker exec qso-trails-ci sh -lc '! grep -Fq ".style." /app/public/theme-pack.js'
           docker exec qso-trails-ci sh -lc '! grep -Fq ".style." /app/public/embed-extras.js'
           docker exec qso-trails-ci sh -lc '! grep -Fq ".style." /app/public/globe.js'
+          docker exec qso-trails-ci sh -lc '! grep -Fq ".style." /app/public/embed-layout.js'
 
           curl -fsS -D admin-js.headers "http://127.0.0.1:3000/assets/admin.js?v=$ASSET_V" -o /dev/null
           grep -qi '^cache-control: no-store' admin-js.headers

@@ -123,6 +123,19 @@ earth
 
 `earth` displays real-world NASA Blue Marble imagery with the sanitized QSO overlay. Advanced globe controls/replay remain available on the normal vector themes; Earth mode focuses on the photographic world view.
 
+### Embed layout
+
+`layout=` selects a presentation layout for the interactive embed:
+
+```text
+classic     original full-bleed HUD (default)
+chrome      compact HUD that scales with the frame
+poster      globe + light editorial column
+instrument  globe + dark analytics rail
+```
+
+Layouts only rearrange the existing public HUD; they never publish additional QSO fields. An unknown or missing value falls back to `classic`. `poster` and `instrument` stack vertically below ~520 px of embed width.
+
 ### Static image
 
 Static PNG themes:

@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>QSO Trails Admin</title>
-  <link rel="stylesheet" href="/assets/style.css?v=20260828-1">
+  <link rel="stylesheet" href="/assets/style.css?v=20261006-1">
 </head>
 <body><main>
 <h1>QSO Trails Admin</h1>
 <p>Sync Wavelog or upload ADIF, then choose exactly what the public iframe is allowed to expose.</p>
-<small id="uiBuild">Admin UI build 2026-08-28.1</small>
+<small id="uiBuild">Admin UI build 2026-10-06.1</small>
 
 <div class="cols">
 <section class="card">
@@ -57,6 +57,8 @@
   <label class="inline"><input id="visualGrayline" type="checkbox" checked> Show day/night grayline</label>
   <label>Theme<select id="visualTheme"><option value="night">Night</option><option value="ocean">Ocean</option><option value="light">Light</option><option value="midnight">Midnight</option><option value="aurora">Aurora</option><option value="amber">Amber</option><option value="mono">Monochrome</option><option value="ice">Ice</option><option value="earth">Real Earth · NASA Blue Marble NG · 3D globe</option></select></label>
   <small id="earthStatus">NASA Blue Marble NG status: checking private server diagnostics…</small>
+  <label>Embed layout<select id="visualLayout"><option value="classic">Classic · original full-bleed HUD</option><option value="chrome">Fluid chrome · compact scaling HUD</option><option value="poster">Poster · globe + editorial panel</option><option value="instrument">Instrument · globe + analytics rail</option></select></label>
+  <small>Layout changes presentation only. It rearranges the existing public HUD and never makes additional QSO fields public.</small>
   <label>Display mode<select id="visualMode"><option value="paths">Paths</option><option value="density">Density heatmap</option><option value="both">Paths + density</option></select></label>
   <label>Trail opacity<input id="visualOpacity" type="range" min="8" max="90" value="32"><span id="visualOpacityValue">32%</span></label>
   <label>Replay speed<select id="visualReplay"><option value="0">Off</option><option value="0.5">0.5×</option><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
@@ -129,8 +131,8 @@
   <h3>Recent application log</h3><pre id="diagnosticLog">Loading…</pre>
 </section>
 </main>
-<script src="/assets/dom-safety.js?v=20260828-1"></script>
-<script src="/assets/admin-privacy.js?v=20260828-1"></script>
-<script src="/assets/admin.js?v=20260828-1"></script>
-<script src="/assets/admin-lotw.js?v=20260828-1"></script>
+<script src="/assets/dom-safety.js?v=20261006-1"></script>
+<script src="/assets/admin-privacy.js?v=20261006-1"></script>
+<script src="/assets/admin.js?v=20261006-1"></script>
+<script src="/assets/admin-lotw.js?v=20261006-1"></script>
 </body></html>
