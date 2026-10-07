@@ -21,13 +21,6 @@ lost in review comments. Each entry names the evidence and a concrete next step.
 
 ## Security / correctness
 
-- **`npm run audit:prod` fails on transitive dependencies (pre-existing).**
-  `multer` (high), `qs` (moderate) and `ip-address` (moderate, via
-  `express-rate-limit`) have advisories. No direct dependency or the lockfile was
-  changed here; Dependabot already has open branches for `multer` 2.4.0 and
-  `express-rate-limit` 8.7.0. Next step: take the Dependabot bumps and re-run
-  `npm run audit:prod` (it is a CI gate, so this is currently red on `main`).
-
 - **Admin auth lockout is per-IP and shared with valid logins.** After 10 failed
   attempts from an IP, even correct credentials get 429 for the window
   (`auth-failures.js`). Acceptable for a single-admin self-hosted tool; consider
