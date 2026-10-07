@@ -27,6 +27,12 @@ contracts, not suggestions; the test suite enforces most of them.
   each module explicitly; a missing entry only fails at container start.
   `test/dockerfile-copies.js` enforces that every local `require()` reachable
   from `server.js` and the preloads is copied.
+- **COPY order matters for build-time steps.** A module must be copied *before*
+  the `RUN` step that needs it, not merely somewhere in the file. The Earth-seed
+  layer runs `scripts/build-earth-texture.js` (whose require graph now includes
+  `data-dir.js`); CI builds with `QSO_TRAILS_SKIP_EARTH_BUILD=1` so it never
+  exercises that step. `test/dockerfile-copies.js` therefore walks the
+  build-time entrypoints too and asserts layer ordering, not just a flat set.
 
 ## Security-sensitive changes
 

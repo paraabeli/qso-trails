@@ -12,7 +12,13 @@ RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
 # Keep the imagery in its own cached image layer. Normal application-source
 # changes below do not invalidate this layer, so a cached Docker build does not
 # repeatedly contact the upstream imagery host.
-COPY png-codec.js diagnostics.js earth-texture.js ./
+#
+# This layer must contain the full require graph of scripts/build-earth-texture.js:
+# earth-texture.js requires ./png-codec, ./diagnostics and ./data-dir. data-dir.js
+# used to be COPYed only much later, which broke this build-time step with
+# "Cannot find module './data-dir'" — test/dockerfile-copies.js now enforces the
+# layer ordering.
+COPY png-codec.js diagnostics.js data-dir.js earth-texture.js ./
 COPY scripts/build-earth-texture.js ./scripts/build-earth-texture.js
 RUN mkdir -p /app/earth-seed \
     && if [ "$QSO_TRAILS_SKIP_EARTH_BUILD" = "1" ]; then echo "Skipping external Earth texture fetch for this build."; else node scripts/build-earth-texture.js; fi
